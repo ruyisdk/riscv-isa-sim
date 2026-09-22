@@ -43,6 +43,10 @@ static void help(int exit_code = 1)
   fprintf(stderr, "  --log=<name>          File name for option -l\n");
   fprintf(stderr, "  --debug-cmd=<name>    Read commands from file (use with -d)\n");
   fprintf(stderr, "  --isa=<name>          RISC-V ISA string [default %s]\n", DEFAULT_ISA);
+  fprintf(stderr, "  --ame-nelem=<n>       AME_NELEM, power of 4 [default 64]\n");
+  fprintf(stderr, "  --ame-udsz=<n>        AME unit datatype size in bits [default 32]\n");
+  fprintf(stderr, "  --ame-mregs=<n>       Number of AME M registers (16 or 32) [default 32]\n");
+  fprintf(stderr, "  --ame-accregs=<n>     Number of AME Acc registers (1, 2, 4, 8, or 16) [default 4]\n");
   fprintf(stderr, "  --pmpregions=<n>      Number of PMP regions [default 16]\n");
   fprintf(stderr, "  --pmpgranularity=<n>  PMP Granularity in bytes [default 4]\n");
   fprintf(stderr, "  --priv=<m|mu|msu>     RISC-V privilege modes supported [default %s]\n", DEFAULT_PRIV);
@@ -413,6 +417,10 @@ int main(int argc, char** argv)
   parser.option(0, "big-endian", 0, [&](const char UNUSED *s){cfg.endianness = endianness_big;});
   parser.option(0, "log-cache-miss", 0, [&](const char UNUSED *s){log_cache = true;});
   parser.option(0, "isa", 1, [&](const char* s){cfg.isa = s;});
+  parser.option(0, "ame-nelem", 1, [&](const char* s){cfg.ame_nelem = atoul_safe(s);});
+  parser.option(0, "ame-udsz", 1, [&](const char* s){cfg.ame_udsz = atoul_safe(s);});
+  parser.option(0, "ame-mregs", 1, [&](const char* s){cfg.ame_mregs = atoul_safe(s);});
+  parser.option(0, "ame-accregs", 1, [&](const char* s){cfg.ame_accregs = atoul_safe(s);});
   parser.option(0, "pmpregions", 1, [&](const char* s){cfg.pmpregions = atoul_safe(s);});
   parser.option(0, "pmpgranularity", 1, [&](const char* s){cfg.pmpgranularity = atoul_safe(s);});
   parser.option(0, "priv", 1, [&](const char* s){cfg.priv = s;});
@@ -486,6 +494,12 @@ int main(int argc, char** argv)
 
   auto argv1 = parser.parse(argv);
   std::vector<std::string> htif_args(argv1, (const char*const*)argv + argc);
+
+  if (!ame_params_legal(cfg.ame_nelem, cfg.ame_udsz, cfg.ame_mregs, cfg.ame_accregs)) {
+    fprintf(stderr, "error: invalid AME parameters (nelem must be a power of 4 with N>=2; "
+            "udsz in {8,16,32,64}; mregs 16 or 32; accregs 1, 2, 4, 8, or 16)\n");
+    exit(-1);
+  }
 
   if (!*argv1)
     help();

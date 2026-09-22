@@ -295,13 +295,33 @@ int htif_t::run()
       idle();
   }
 
+  // A payload's tohost may be only 4-byte aligned (e.g. linker placement
+  // after 32-bit data); read/write it in halves there instead of letting
+  // the 8-byte access throw an uncaught misaligned-address error.
+  auto read_tohost = [&]() -> uint64_t {
+    if (tohost_addr & 7) {
+      uint32_t lo = from_target(mem.read_uint32(tohost_addr));
+      uint32_t hi = from_target(mem.read_uint32(tohost_addr + 4));
+      return (uint64_t(hi) << 32) | lo;
+    }
+    return from_target(mem.read_uint64(tohost_addr));
+  };
+  auto clear_tohost = [&]() {
+    if (tohost_addr & 7) {
+      mem.write_uint32(tohost_addr, target_endian<uint32_t>::zero);
+      mem.write_uint32(tohost_addr + 4, target_endian<uint32_t>::zero);
+    } else {
+      mem.write_uint64(tohost_addr, target_endian<uint64_t>::zero);
+    }
+  };
+
   while (!should_exit())
   {
     uint64_t tohost;
 
     try {
-      if ((tohost = from_target(mem.read_uint64(tohost_addr))) != 0)
-        mem.write_uint64(tohost_addr, target_endian<uint64_t>::zero);
+      if ((tohost = read_tohost()) != 0)
+        clear_tohost();
     } catch (mem_trap_t& t) {
       bad_address("accessing tohost", t.get_tval());
     }
@@ -322,8 +342,17 @@ int htif_t::run()
     }
 
     try {
-      if (!fromhost_queue.empty() && !mem.read_uint64(fromhost_addr)) {
-        mem.write_uint64(fromhost_addr, to_target(fromhost_queue.front()));
+      uint64_t fromhost_val = (fromhost_addr & 7)
+          ? (uint64_t(from_target(mem.read_uint32(fromhost_addr + 4))) << 32)
+              | from_target(mem.read_uint32(fromhost_addr))
+          : from_target(mem.read_uint64(fromhost_addr));
+      if (!fromhost_queue.empty() && !fromhost_val) {
+        if (fromhost_addr & 7) {
+          mem.write_uint32(fromhost_addr, target_endian<uint32_t>::zero);
+          mem.write_uint32(fromhost_addr + 4, target_endian<uint32_t>::zero);
+        } else {
+          mem.write_uint64(fromhost_addr, target_endian<uint64_t>::zero);
+        }
         fromhost_queue.pop();
       }
     } catch (mem_trap_t& t) {

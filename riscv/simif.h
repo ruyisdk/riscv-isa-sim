@@ -9,6 +9,7 @@
 
 class processor_t;
 class mmu_t;
+class ame_backend_t;
 
 // this is the interface to the simulator used by the processors and memory
 class simif_t
@@ -27,6 +28,7 @@ public:
 
   virtual const cfg_t &get_cfg() const = 0;
   virtual const std::map<size_t, processor_t*>& get_harts() const = 0;
+  virtual ame_backend_t* get_ame_backend() { return nullptr; }
 
   virtual const char* get_symbol(uint64_t paddr) = 0;
 

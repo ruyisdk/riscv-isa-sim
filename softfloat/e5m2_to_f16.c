@@ -62,7 +62,7 @@ float16_t e5m2_to_f16( float8_t a )
     frac = fracE5M2UI( uiA );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
-    if ( exp == 0xF ) {
+    if ( exp == 0x1F ) {
         if ( frac ) {
             /* NaN */
             softfloat_E5M2UIToCommonNaN( uiA, &commonNaN );
@@ -81,11 +81,11 @@ float16_t e5m2_to_f16( float8_t a )
             uiZ = packToF16UI( sign, 0, 0 );
             goto uiZ;
         }
-        /* subnormal */
-        normExpSig = softfloat_normSubnormalE5M2Sig( frac );
-        //TODO: might be unnecessary to implement a dedicated function
-        exp = normExpSig.exp - 1;
-        frac = normExpSig.sig;
+        /* subnormal: value = frac * 2^-16. f16 shares the E5M2 bias, so
+           every E5M2 subnormal is exactly an f16 subnormal with mantissa
+           field frac << 8; no normalization or rounding is needed. */
+        uiZ = packToF16UI( sign, 0, (uint_fast16_t) frac<<8 );
+        goto uiZ;
     }
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/

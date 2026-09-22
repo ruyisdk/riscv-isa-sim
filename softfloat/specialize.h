@@ -124,12 +124,24 @@ struct commonNaN { char _unused; };
 #define softfloat_isSigNaNF16UI( uiA ) ((((uiA) & 0x7E00) == 0x7C00) && ((uiA) & 0x01FF))
 
 /*----------------------------------------------------------------------------
+| Returns true when 8-bit E5M2 `uiA' is a signaling NaN.  E5M2 uses fraction
+| bit 1 as the quiet bit, so fraction 01 is the only signaling NaN encoding.
+| Note:  This macro evaluates its argument more than once.
+*----------------------------------------------------------------------------*/
+#define softfloat_isSigNaNE5M2UI( uiA ) ((((uiA) & 0x7C) == 0x7C) && (((uiA) & 0x03) == 0x01))
+
+/*----------------------------------------------------------------------------
 | Assuming `uiA' has the bit pattern of a 8-bit floating-point NaN, converts
 | this NaN to the common NaN form, and stores the resulting common NaN at the
 | location pointed to by `zPtr'.
 *----------------------------------------------------------------------------*/
 #define softfloat_E4M3UIToCommonNaN( uiA, zPtr ) (void) (uiA), (void) (zPtr)
-#define softfloat_E5M2UIToCommonNaN( uiA, zPtr ) (void) (uiA), (void) (zPtr)
+#define softfloat_E5M2UIToCommonNaN( uiA, zPtr ) \
+    do { \
+        (void) (zPtr); \
+        if ( softfloat_isSigNaNE5M2UI( uiA ) ) \
+            softfloat_raiseFlags( softfloat_flag_invalid ); \
+    } while ( 0 )
 
 /*----------------------------------------------------------------------------
 | Assuming `uiA' has the bit pattern of a 16-bit floating-point NaN, converts
@@ -484,4 +496,3 @@ void
 #endif
 
 #endif
-

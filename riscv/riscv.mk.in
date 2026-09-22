@@ -1,5 +1,5 @@
 get_insn_list = $(shell grep ^DECLARE_INSN $(1) | sed 's/DECLARE_INSN(\(.*\),.*,.*)/\1/')
-get_opcode = $(shell grep ^DECLARE_INSN.*\\\<$(2)\\\> $(1) | sed 's/DECLARE_INSN(.*,\(.*\),.*)/\1/')
+get_opcode = $(shell grep -h ^DECLARE_INSN.*\\\<$(2)\\\> $(1) $(src_dir)/riscv/ame_encoding.h | head -1 | sed 's/DECLARE_INSN(.*,\(.*\),.*)/\1/')
 
 riscv_subproject_deps = \
 	fdt \
@@ -49,6 +49,11 @@ riscv_install_hdrs = \
 	trap.h \
 	triggers.h \
 	vector_unit.h \
+	ame_unit.h \
+	ame_encoding.h \
+	ame_dtypes.h \
+	ame_ext_macros.h \
+	ame_ops.h \
 
 riscv_precompiled_hdrs = \
 	insn_template.h \
@@ -78,6 +83,8 @@ riscv_srcs = \
 	csr_init.cc \
 	triggers.cc \
 	vector_unit.cc \
+	ame_unit.cc \
+	ame_ops.cc \
 	socketif.cc \
 	cfg.cc \
 	aplic.cc \
@@ -85,6 +92,20 @@ riscv_srcs = \
 
 riscv_test_srcs = \
   check-opcode-overlap.t.cc \
+  ame-acquire-release-encoding.t.cc \
+  ame-dtype-descriptors.t.cc \
+  ame-matmul-gemm.t.cc \
+  ame-layout-st-tst-cm.t.cc \
+  ame-matmul-transpose-accumulate.t.cc \
+  ame-unit-config-and-ownership.t.cc \
+  ame-elementwise-arith.t.cc \
+  ame-elementwise-bitwise-shift.t.cc \
+  ame-elementwise-abs-mean.t.cc \
+  ame-reduce-prefix-permute.t.cc \
+  ame-zip-scatter.t.cc \
+  ame-mmove-and-ms-off.t.cc \
+  ame-elementwise-convert.t.cc \
+  ame-fp-unary-math.t.cc \
 
 riscv_gen_hdrs = \
 	insn_list.h \
@@ -1200,6 +1221,146 @@ riscv_insn_ext_zilx = \
 	lxsuwhu \
 	lxsuwwu \
 
+riscv_insn_ext_ztt = \
+	ame_acquire \
+	ame_release \
+	agettyp \
+	asettyp \
+	mgettyp \
+	msettyp \
+	mls_1r \
+	mss_1r \
+	mls_rm \
+	mss_rm \
+	mls_cm \
+	mss_cm \
+	mls_st \
+	mss_st \
+	mls_tst \
+	mss_tst \
+	mmov_m_a \
+	mmov_a_m \
+	mmov_m_m \
+	mzero_2d_acc \
+	mzero_2d_m \
+	mcolid_ew \
+	mrowid_ew \
+	mmulacc_2d \
+	mmulaccneg_2d \
+	mmulatacc_2d \
+	mmulataccneg_2d \
+	mmulbtacc_2d \
+	mmulbtaccneg_2d \
+	mmul_ew \
+	mmul_ew_x \
+	mmulacc_ew \
+	mmulacc_ew_x \
+	mmulaccneg_ew \
+	mmulaccneg_ew_x \
+	mmuladd_ew \
+	mmuladd_ew_x \
+	mmulneg_ew \
+	mmulneg_ew_x \
+	mmulsub_ew \
+	mmulsub_ew_x \
+	mabsdiff_ew \
+	mabsdiff_ew_x \
+	madd_ew \
+	madd_ew_x \
+	mhdiff_ew \
+	mhdiff_ew_x \
+	mmax_ew \
+	mmax_ew_x \
+	mmean_ew \
+	mmean_ew_x \
+	mmin_ew \
+	mmin_ew_x \
+	msub_ew \
+	msub_ew_x \
+	mabs_ew \
+	mand_ew \
+	mand_ew_x \
+	mandnot_ew \
+	mandnot_ew_x \
+	mor_ew \
+	mor_ew_x \
+	mornot_ew \
+	mornot_ew_x \
+	mxor_ew \
+	mxor_ew_x \
+	msll_ew \
+	msll_ew_x \
+	msra_ew \
+	msra_ew_x \
+	msrl_ew \
+	msrl_ew_x \
+	mcmovge_ew \
+	mcmovlt_ew \
+	mcmpge_ew \
+	mcmpge_ew_x \
+	mcmplt_ew \
+	mcmplt_ew_x \
+	mselge_ew \
+	msellt_ew \
+	mprefixadd_col \
+	mprefixadd_row \
+	mprefixmax_col \
+	mprefixmax_row \
+	mreduceadd_col \
+	mreduceadd_row \
+	mreducemax_col \
+	mreducemax_row \
+	mreducemin_col \
+	mreducemin_row \
+	mcolbcast_ew_x \
+	mcolgather_ew \
+	mcolshift_ew_x \
+	mrowbcast_ew_x \
+	mrowgather_ew \
+	mrowshift_ew_x \
+	mcolunzip_ew \
+	mcolzip_ew \
+	mrowunzip_ew \
+	mrowzip_ew \
+	mrowscatadd_ew \
+	mcolscatadd_ew \
+	mrowscatmax_ew \
+	mcolscatmax_ew \
+	mpack_ew_x \
+	munpack_ew_x \
+	mbcast_m_x \
+	mmove8_m_x \
+	mmove16_m_x \
+	mmove32_m_x \
+	mmove64_m_x \
+	mmove8_x_m \
+	mmove16_x_m \
+	mmove32_x_m \
+	mmove64_x_m \
+	mconv_ew \
+	mfrintm_ew \
+	mfrintn_ew \
+	mfrintp_ew \
+	mfrintz_ew \
+	mcos_ew \
+	mexp2_ew \
+	mlog2_ew \
+	mrec_ew \
+	mrsqrt_ew \
+	msin_ew \
+	msqrt_ew \
+	mtanh_ew \
+	mldexp_ew \
+	mldexp_ew_x \
+	mldexpacc_ew \
+	mldexpacc_ew_x \
+	mlog2sub_ew \
+	mlog2sub_ew_x \
+	mrdexp_ew \
+	mrdexpacc_ew \
+	msublog2_ew \
+	msublog2_ew_x \
+
 riscv_insn_ext_p = \
 	pli_b \
 	pli_h \
@@ -1845,6 +2006,7 @@ riscv_insn_list = \
 	$(riscv_insn_ext_zvt) \
 	$(riscv_insn_ext_zvzip) \
 	$(riscv_insn_ext_zilx) \
+	$(riscv_insn_ext_ztt) \
 	$(riscv_insn_priv) \
 	$(riscv_insn_smrnmi) \
 	$(riscv_insn_svinval) \

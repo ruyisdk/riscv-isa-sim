@@ -18,6 +18,7 @@
 #include "../fesvr/memif.h"
 #include "vector_unit.h"
 #include "imsic.h"
+#include "ame_unit.h"
 
 #define FIRST_HPMCOUNTER 3
 #define N_HPMCOUNTERS 29
@@ -276,6 +277,9 @@ public:
   bool any_vector_extensions() const {
     return VU.VLEN > 0;
   }
+  bool any_ame_extensions() const {
+    return extension_enabled(EXT_ZTT);
+  }
   bool extension_enabled(unsigned char ext) const {
     return extension_enabled(isa_extension_t(ext));
   }
@@ -429,6 +433,7 @@ public:
   reg_t pmp_tor_mask() { return -(reg_t(1) << (lg_pmp_granularity - PMP_SHIFT)); }
 
   vectorUnit_t VU;
+  ame_unit_t AMU;
   triggers::module_t TM;
 
   unsigned geilen;

@@ -70,6 +70,12 @@ float8_t f32_to_e4m3( float32_t a, bool saturationMode )
          uiZ = saturationMode
             ? packToE4M3UI( sign, 0xF, 0x6 )
             : softfloat_commonNaNToE4M3UI(&commonNaN);
+         if (saturationMode) {
+            // Saturating an infinity to the max finite is an overflow that
+            // is also inexact (spec: DZ|OF|NX for 1/(±0), 1/sqrt(±0)).
+            softfloat_raiseFlags(
+                softfloat_flag_overflow | softfloat_flag_inexact );
+         }
        }
        goto uiZ;
    }

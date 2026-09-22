@@ -923,6 +923,7 @@ static void NOINLINE add_unknown_insns(disassembler_t* d)
   #define DECLARE_INSN(code, match, mask) \
    add_unknown_insn(d, #code, match, mask);
   #include "encoding.h"
+  #include "ame_encoding.h"
   #undef DECLARE_INSN
 }
 
@@ -955,6 +956,7 @@ void disassembler_t::add_instructions(const isa_parser_t* isa, bool strict)
    const uint32_t match_##code = match; \
    const uint32_t mask_##code = mask;
   #include "encoding.h"
+  #include "ame_encoding.h"
   #undef DECLARE_INSN
 
   // explicit per-instruction disassembly

@@ -47,6 +47,10 @@ cfg_t::cfg_t()
   real_time_clint  = false;
   trigger_count    = 4;
   cache_blocksz    = 64;
+  ame_nelem        = 64;
+  ame_udsz         = 32;
+  ame_mregs        = 32;
+  ame_accregs      = 4;
 }
 
 void start_pc_t::set_global(reg_t pc)

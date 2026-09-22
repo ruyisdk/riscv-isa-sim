@@ -69,6 +69,7 @@ public:
   virtual bool is_debug_module_access(reg_t paddr, size_t len) override;
 
   virtual const std::map<size_t, processor_t*>& get_harts() const override { return harts; }
+  virtual ame_backend_t* get_ame_backend() override { return &ame_backend; }
   const bus_t& get_bus() const {  return bus;}
 
   // Callback for processors to let the simulation know they were reset.
@@ -83,6 +84,7 @@ public:
 private:
   const cfg_t * const cfg;
   std::vector<std::pair<reg_t, abstract_mem_t*>> mems;
+  ame_backend_t ame_backend;
   std::vector<processor_t*> procs;
   std::map<size_t, processor_t*> harts;
   std::unordered_map<reg_t, char*> addr_to_mem_cache;
@@ -137,6 +139,9 @@ private:
   void interactive_run_noisy(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_run_silent(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_vreg(const std::string& cmd, const std::vector<std::string>& args);
+  void interactive_ame(const std::string& cmd, const std::vector<std::string>& args);
+  void interactive_mreg(const std::string& cmd, const std::vector<std::string>& args);
+  void interactive_areg(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_reg(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_freg(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_fregh(const std::string& cmd, const std::vector<std::string>& args);

@@ -108,6 +108,7 @@ typedef enum {
   EXT_ZVTFMM,
   EXT_ZVTDMM,
   EXT_ZVZIP,
+  EXT_ZTT,
   EXT_SSTC,
   EXT_ZAAMO,
   EXT_ZALRSC,

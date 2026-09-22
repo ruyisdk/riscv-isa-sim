@@ -1,3 +1,50 @@
+# Spike Ztt
+
+## Building
+
+Prerequisites (per `configure.ac`):
+
+- device-tree-compiler (`dtc`): `AC_PATH_PROG([DTC],[dtc],[no])`.
+- Boost 1.53 or later, with the `system` and `regex` components (`AX_BOOST_BASE([1.53])`, `AX_BOOST_ASIO`, `AX_BOOST_REGEX`).
+- `libpthread` (`AC_CHECK_LIB([pthread], [pthread_create], ...)`).
+- A C++-capable compiler (`AC_PROG_CXX`).
+
+Build:
+
+```sh
+mkdir -p build && cd build
+../configure --prefix=<install-dir>
+make -j"$(nproc)"
+```
+
+Artifacts: `build/spike` (the same build directory also produces `xspike` and `spike-log-parser`).
+
+## Enabling the Ztt extension
+
+Add `_ztt` to the `--isa` string. It is registered as `{"ztt", {EXT_ZTT}}` in `disasm/isa_parser.cc`. The default ISA is `rv64imafdc_zicntr_zihpm` (`DEFAULT_ISA` in `riscv/platform.h`).
+
+Run an ELF:
+
+```sh
+build/spike --isa=rv64imafdc_ztt \
+  --ame-nelem=64 --ame-udsz=8 --ame-mregs=32 --ame-accregs=4 \
+  <elf-file>
+```
+
+## Optional arguments
+
+AME/Ztt-related command-line options (registered in `spike_main/spike.cc`, defaults in `riscv/cfg.cc`, value validation in `ame_params_legal` in `riscv/ame_unit.cc`); runtime and debug details are in [Ztt / AME (Spike notes)](#ztt--ame-spike-notes):
+
+| Option | Meaning | Value | Default |
+| --- | --- | --- | --- |
+| `--isa=<name>` | ISA string | Enables Ztt when it contains `_ztt` | `rv64imafdc_zicntr_zihpm` |
+| `--ame-nelem=<n>` | AME_NELEM, total number of elements of the square matrix = N^2 | A power of 4 (N >= 2, i.e. 4, 16, 64, 256, ...) | `64` |
+| `--ame-udsz=<n>` | Unit datatype size in bits | `8`, `16`, `32`, `64` | `32` |
+| `--ame-mregs=<n>` | Number of M/Md registers | `16` or `32` | `32` |
+| `--ame-accregs=<n>` | Number of Acc/Ad registers | `1`, `2`, `4`, `8`, `16` | `4` |
+
+Invalid values cause an error and abort at startup.
+
 Spike RISC-V ISA Simulator
 ============================
 
@@ -84,6 +131,26 @@ Spike supports the following RISC-V ISA features:
   - Zclsd extension, v1.0
   - Zilx extension, v0.1
   - Zimop extension, v1.0
+  - Ztt attached matrix extension (AME), v0.6 (provisional encodings)
+
+Ztt / AME (Spike notes)
+-----------------------
+
+Enable with `_ztt` in `--isa`. Defaults: `AME_NELEM=64` (N=8), unit datatype
+32 bits, 32 M registers, 4 Acc registers. Override with `--ame-nelem`,
+`--ame-udsz`, `--ame-mregs`, and `--ame-accregs`.
+
+Interactive debug (`spike -d`): `ame <core>`, `mreg <core> [reg]`,
+`areg <core> [reg]`.
+
+A simulation has one exclusive AME backend. `ame.acquire` TRY returns BUSY
+if another hart owns it; BOUNDED_WAIT returns TIMEOUT (Spike cannot run a
+peer hart inside the instruction, so the wait interval is zero extra
+interleaves). `menvcfg`/`henvcfg` AME bits are not implemented. Memory
+accesses are sequentially consistent. Acc register count may be 1, 2, 4, 8,
+or 16. AME load/store bases are aligned to the element size. Spec `mstatus`/
+`sstatus`/`vsstatus` `MS[1:0]` is Off/Initial/Clean/Dirty on provisional
+bits 25:26 (`SSTATUS_AME_MS`); Zvt keeps `SSTATUS_MS` at bits 29:30.
 
 Versioning and APIs
 -------------------

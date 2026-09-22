@@ -21,6 +21,7 @@ int main()
   #define DECLARE_INSN(name, match, mask) \
     const insn_bits_t UNUSED name##_match = (match), name##_mask = (mask);
     #include "encoding.h"
+    #include "ame_encoding.h"
   #undef DECLARE_INSN
 
   static const opcode static_list[] = {

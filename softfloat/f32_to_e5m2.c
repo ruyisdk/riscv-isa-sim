@@ -72,6 +72,13 @@ float8_t f32_to_e5m2( float32_t a, bool saturationMode )
          uiZ = saturationMode
                   ? packToE5M2UI( sign, 0x1E, 0x3 )
                   : packToE5M2UI( sign, 0x1F, 0x0 );
+         if (saturationMode) {
+            // Saturating an infinity to the max finite is an inexact
+            // overflow (spec: inf results narrow to no-inf formats must
+            // accrue OF|NX alongside any DZ).
+            softfloat_raiseFlags(
+                softfloat_flag_overflow | softfloat_flag_inexact );
+         }
       }
       goto uiZ;
    }

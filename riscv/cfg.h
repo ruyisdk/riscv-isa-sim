@@ -95,6 +95,12 @@ public:
   reg_t                   cache_blocksz;
   std::optional<abstract_sim_if_t*> external_simulator;
 
+  // Ztt / AME implementation parameters (spec AME_NELEM etc.).
+  reg_t                   ame_nelem;
+  reg_t                   ame_udsz;
+  reg_t                   ame_mregs;
+  reg_t                   ame_accregs;
+
   size_t nprocs() const { return hartids.size(); }
   size_t max_hartid() const { return hartids.back(); }
 };

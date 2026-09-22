@@ -81,11 +81,14 @@ float16_t e5m2_to_bf16( float8_t a )
             uiZ = packToBF16UI( sign, 0, 0 );
             goto uiZ;
         }
-        /* subnormal */
+        /* subnormal: value = frac * 2^-16, always a normal bf16.
+           normExpSig.exp is the E5M2-biased exponent (E + 15), so the bf16
+           field is E + 127 = normExpSig.exp + 112, and the normalized
+           significand sig (implicit-1 at bit 2) contributes (sig - 4) << 5. */
         normExpSig = softfloat_normSubnormalE5M2Sig( frac );
-        //TODO: might be unnecessary to implement a dedicated function
-        exp = normExpSig.exp - 1;
-        frac = normExpSig.sig;
+        uiZ = packToBF16UI( sign, normExpSig.exp + 0x70,
+                            (uint_fast16_t)( normExpSig.sig - 4 )<<5);
+        goto uiZ;
     }
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/

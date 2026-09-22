@@ -4,8 +4,8 @@
 #include <algorithm>
 
 #include "csrs.h"
-// For processor_t:
 #include "processor.h"
+#include "ame_encoding.h"
 #include "mmu.h"
 // For get_field():
 #include "decode_macros.h"
@@ -588,6 +588,7 @@ reg_t base_status_csr_t::compute_sstatus_write_mask() const noexcept {
   const bool has_fs = (proc->extension_enabled('S') || proc->extension_enabled('F')) && !proc->extension_enabled(EXT_ZFINX);
   // Implementations w/o V may still have mstatus.vs,
   const bool has_vs = proc->any_vector_extensions();
+  const bool has_ms = proc->any_ame_extensions();
   return 0
     | (proc->extension_enabled('S') ? (SSTATUS_SIE | SSTATUS_SPIE | SSTATUS_SPP) : 0)
     | (has_page || proc->extension_enabled_const(EXT_SSPMP)? (SSTATUS_SUM | SSTATUS_MXR) : 0)
@@ -595,6 +596,7 @@ reg_t base_status_csr_t::compute_sstatus_write_mask() const noexcept {
     | (proc->any_custom_extensions() ? SSTATUS_XS : 0)
     | (has_vs ? SSTATUS_VS : 0)
     | (proc->extension_enabled(EXT_ZVTBASE) ? SSTATUS_MS : 0)
+    | (has_ms ? SSTATUS_AME_MS : 0)
     | (proc->extension_enabled('S') && proc->extension_enabled(EXT_ZICFILP) ? SSTATUS_SPELP : 0)
     | (proc->extension_enabled(EXT_SSDBLTRP) ? SSTATUS_SDT : 0)
     ;
@@ -609,6 +611,7 @@ reg_t base_status_csr_t::adjust_sd(const reg_t val) const noexcept {
   if (((val & SSTATUS_FS) == SSTATUS_FS) ||
       ((val & SSTATUS_VS) == SSTATUS_VS) ||
       ((val & SSTATUS_MS) == SSTATUS_MS) ||
+      ((val & SSTATUS_AME_MS) == SSTATUS_AME_MS) ||
       ((val & SSTATUS_XS) == SSTATUS_XS)) {
     return val | sd_bit;
   }

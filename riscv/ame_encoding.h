@@ -1,0 +1,508 @@
+// See LICENSE for license details.
+// Ztt / AME encodings and CSR addresses (provisional v0.6).
+
+#ifndef _RISCV_AME_ENCODING_H
+#define _RISCV_AME_ENCODING_H
+
+#include "config.h"
+
+// Spec 2.1.1: AME adds MS[1:0] to mstatus, shadowed in sstatus, VS[1:0] model.
+// Off=0, Initial=1, Clean=2, Dirty=3. Bit positions are not in the Ztt
+// allocation yet; encoding.h already gave MSTATUS_MS / SSTATUS_MS (bits 29:30)
+// to Zvt, so AME uses the unused pair 25:26 under distinct names.
+#define MSTATUS_AME_MS          0x06000000UL
+#define SSTATUS_AME_MS          MSTATUS_AME_MS
+#define MSTATUS_AME_MS_SHIFT    25
+
+// AME CSR addresses (provisional).
+#define CSR_AMENLEN             0xcc0
+#define CSR_AMEUDSZ             0xcc1
+#define CSR_AMESTYPE            0x810
+#define CSR_AMEOWN              0xcc3
+#define CSR_AMEFFLAGS           0x811
+#define CSR_AMEXSAT             0x812
+#define CSR_AMESTATUS           0x800
+
+#define AMESTATUS_UN            _RISCV_UL(0x1)
+
+#define AME_ACQUIRE_GRANTED     0x00
+#define AME_ACQUIRE_BUSY        0x01
+#define AME_ACQUIRE_UNSUPPORTED 0x02
+#define AME_ACQUIRE_DISABLED    0x03
+#define AME_ACQUIRE_BAD_DESC    0x04
+#define AME_ACQUIRE_TIMEOUT     0x05
+#define AME_ACQUIRE_INTERRUPTED 0x06
+#define AME_ACQUIRE_DENIED      0x07
+
+#define AME_ACQUIRE_RESULT(status, success) \
+  ((((unsigned long)(status)) << 1) | ((success) ? 1ul : 0ul))
+
+// CUSTOM-1 opcode 0x2b.
+// R2 masks include xfunct5[24:20]; rd/rs1 remain free.
+#define MASK_AME_R2             0xfff0707f
+
+// R2 bank 1 (funct7=0x52): resource management.
+// Spec 8.1: ame.acquire uses xfunct5=0x09 (not 0).
+#define MATCH_AME_ACQUIRE       0xa490002b
+#define MASK_AME_ACQUIRE        MASK_AME_R2
+#define MATCH_AME_RELEASE       0xa4a0002b
+#define MASK_AME_RELEASE        0xffffffff
+
+// R2 bank 0 (funct7=0x51): datatype management.
+#define MATCH_AGETTYP           0xa200002b
+#define MASK_AGETTYP            MASK_AME_R2
+#define MATCH_ASETTYP           0xa210002b
+#define MASK_ASETTYP            MASK_AME_R2
+#define MATCH_MGETTYP           0xa220002b
+#define MASK_MGETTYP            MASK_AME_R2
+#define MATCH_MSETTYP           0xa230002b
+#define MASK_MSETTYP            MASK_AME_R2
+#define MATCH_MABS_EW           0xa240002b
+#define MASK_MABS_EW            MASK_AME_R2
+#define MATCH_MCONV_EW          0xa2d0002b
+#define MASK_MCONV_EW           MASK_AME_R2
+#define MATCH_MFRINTM_EW        0xa250002b
+#define MASK_MFRINTM_EW         MASK_AME_R2
+#define MATCH_MFRINTN_EW        0xa260002b
+#define MASK_MFRINTN_EW         MASK_AME_R2
+#define MATCH_MFRINTP_EW        0xa270002b
+#define MASK_MFRINTP_EW         MASK_AME_R2
+#define MATCH_MFRINTZ_EW        0xa280002b
+#define MASK_MFRINTZ_EW         MASK_AME_R2
+#define MATCH_MCOS_EW           0xa2e0002b
+#define MASK_MCOS_EW            MASK_AME_R2
+#define MATCH_MEXP2_EW          0xa2f0002b
+#define MASK_MEXP2_EW           MASK_AME_R2
+#define MATCH_MLOG2_EW          0xa300002b
+#define MASK_MLOG2_EW           MASK_AME_R2
+#define MATCH_MREC_EW           0xa310002b
+#define MASK_MREC_EW            MASK_AME_R2
+#define MATCH_MRSQRT_EW         0xa320002b
+#define MASK_MRSQRT_EW          MASK_AME_R2
+#define MATCH_MSIN_EW           0xa330002b
+#define MASK_MSIN_EW            MASK_AME_R2
+#define MATCH_MSQRT_EW          0xa340002b
+#define MASK_MSQRT_EW           MASK_AME_R2
+#define MATCH_MTANH_EW          0xa350002b
+#define MASK_MTANH_EW           MASK_AME_R2
+
+// R2 bank 0 continued: memory / move / zero (provisional).
+#define MATCH_MLS_1R            0xa360002b
+#define MASK_MLS_1R             MASK_AME_R2
+#define MATCH_MSS_1R            0xa390002b
+#define MASK_MSS_1R             MASK_AME_R2
+#define MATCH_MLS_CM            0xa370002b
+#define MASK_MLS_CM             MASK_AME_R2
+#define MATCH_MLS_RM            0xa380002b
+#define MASK_MLS_RM             MASK_AME_R2
+#define MATCH_MSS_CM            0xa3a0002b
+#define MASK_MSS_CM             MASK_AME_R2
+#define MATCH_MSS_RM            0xa3b0002b
+#define MASK_MSS_RM             MASK_AME_R2
+#define MATCH_MMOV_M_A          0xa3c0002b
+#define MASK_MMOV_M_A           MASK_AME_R2
+#define MATCH_MMOV_A_M          0xa3d0002b
+#define MASK_MMOV_A_M           MASK_AME_R2
+#define MATCH_MMOV_M_M          0xa3e0002b
+#define MASK_MMOV_M_M           MASK_AME_R2
+
+#define MATCH_MZERO_2D_ACC      0xa600002b
+#define MASK_MZERO_2D_ACC       0xfffff07f
+#define MATCH_MZERO_2D_M        0xa600802b
+#define MASK_MZERO_2D_M         0xfffff07f
+
+// R3: funct7+funct3+opcode fixed; rs1/rs2/rd free.
+#define MASK_AME_R3             0xfe00707f
+#define MATCH_MMULACC_2D        0x9400002b
+#define MASK_MMULACC_2D         MASK_AME_R3
+#define MATCH_MMULACCNEG_2D     0x9600002b
+#define MASK_MMULACCNEG_2D      MASK_AME_R3
+#define MATCH_MMULATACC_2D      0x9a00002b
+#define MASK_MMULATACC_2D       MASK_AME_R3
+#define MATCH_MMULATACCNEG_2D   0x9c00002b
+#define MASK_MMULATACCNEG_2D    MASK_AME_R3
+#define MATCH_MMULBTACC_2D      0x9e00002b
+#define MASK_MMULBTACC_2D       MASK_AME_R3
+#define MATCH_MMULBTACCNEG_2D   0xa000002b
+#define MASK_MMULBTACCNEG_2D    MASK_AME_R3
+
+// R3 1D elementwise arithmetic (provisional).
+#define MATCH_MABSDIFF_EW       0x0000002b
+#define MASK_MABSDIFF_EW        MASK_AME_R3
+#define MATCH_MABSDIFF_EW_X     0x0200002b
+#define MASK_MABSDIFF_EW_X      MASK_AME_R3
+#define MATCH_MADD_EW           0x0400002b
+#define MASK_MADD_EW            MASK_AME_R3
+#define MATCH_MADD_EW_X         0x0600002b
+#define MASK_MADD_EW_X          MASK_AME_R3
+#define MATCH_MHDIFF_EW         0x0800002b
+#define MASK_MHDIFF_EW          MASK_AME_R3
+#define MATCH_MHDIFF_EW_X       0x0a00002b
+#define MASK_MHDIFF_EW_X        MASK_AME_R3
+#define MATCH_MMAX_EW           0x0c00002b
+#define MASK_MMAX_EW            MASK_AME_R3
+#define MATCH_MMAX_EW_X         0x0e00002b
+#define MASK_MMAX_EW_X          MASK_AME_R3
+#define MATCH_MMEAN_EW          0x1000002b
+#define MASK_MMEAN_EW           MASK_AME_R3
+#define MATCH_MMEAN_EW_X        0x1200002b
+#define MASK_MMEAN_EW_X         MASK_AME_R3
+#define MATCH_MMIN_EW           0x1400002b
+#define MASK_MMIN_EW            MASK_AME_R3
+#define MATCH_MMIN_EW_X         0x1600002b
+#define MASK_MMIN_EW_X          MASK_AME_R3
+#define MATCH_MMUL_EW           0x1800002b
+#define MASK_MMUL_EW            MASK_AME_R3
+#define MATCH_MMUL_EW_X         0x1a00002b
+#define MASK_MMUL_EW_X          MASK_AME_R3
+#define MATCH_MMULACC_EW        0x1c00002b
+#define MASK_MMULACC_EW         MASK_AME_R3
+#define MATCH_MMULACC_EW_X      0x1e00002b
+#define MASK_MMULACC_EW_X       MASK_AME_R3
+#define MATCH_MMULACCNEG_EW     0x2000002b
+#define MASK_MMULACCNEG_EW      MASK_AME_R3
+#define MATCH_MMULACCNEG_EW_X   0x2200002b
+#define MASK_MMULACCNEG_EW_X    MASK_AME_R3
+#define MATCH_MMULADD_EW        0x2400002b
+#define MASK_MMULADD_EW         MASK_AME_R3
+#define MATCH_MMULADD_EW_X      0x2600002b
+#define MASK_MMULADD_EW_X       MASK_AME_R3
+#define MATCH_MMULNEG_EW        0x2800002b
+#define MASK_MMULNEG_EW         MASK_AME_R3
+#define MATCH_MMULNEG_EW_X      0x2a00002b
+#define MASK_MMULNEG_EW_X       MASK_AME_R3
+#define MATCH_MMULSUB_EW        0x2c00002b
+#define MASK_MMULSUB_EW         MASK_AME_R3
+#define MATCH_MMULSUB_EW_X      0x2e00002b
+#define MASK_MMULSUB_EW_X       MASK_AME_R3
+#define MATCH_MSUB_EW           0x3000002b
+#define MASK_MSUB_EW            MASK_AME_R3
+#define MATCH_MSUB_EW_X         0x3200002b
+#define MASK_MSUB_EW_X          MASK_AME_R3
+
+// R3 bitwise / compare / shift (spec 8.10–8.19, 8.86–8.89, 8.115–8.125, 8.137–8.138).
+#define MATCH_MAND_EW           0x3400002b
+#define MASK_MAND_EW            MASK_AME_R3
+#define MATCH_MAND_EW_X         0x3600002b
+#define MASK_MAND_EW_X          MASK_AME_R3
+#define MATCH_MANDNOT_EW        0x3800002b
+#define MASK_MANDNOT_EW         MASK_AME_R3
+#define MATCH_MANDNOT_EW_X      0x3a00002b
+#define MASK_MANDNOT_EW_X       MASK_AME_R3
+#define MATCH_MOR_EW            0x3c00002b
+#define MASK_MOR_EW             MASK_AME_R3
+#define MATCH_MOR_EW_X          0x3e00002b
+#define MASK_MOR_EW_X           MASK_AME_R3
+#define MATCH_MORNOT_EW         0x4000002b
+#define MASK_MORNOT_EW          MASK_AME_R3
+#define MATCH_MORNOT_EW_X       0x4200002b
+#define MASK_MORNOT_EW_X        MASK_AME_R3
+#define MATCH_MSLL_EW           0x4400002b
+#define MASK_MSLL_EW            MASK_AME_R3
+#define MATCH_MSLL_EW_X         0x4600002b
+#define MASK_MSLL_EW_X          MASK_AME_R3
+#define MATCH_MSRA_EW           0x4800002b
+#define MASK_MSRA_EW            MASK_AME_R3
+#define MATCH_MSRA_EW_X         0x4a00002b
+#define MASK_MSRA_EW_X          MASK_AME_R3
+#define MATCH_MSRL_EW           0x4c00002b
+#define MASK_MSRL_EW            MASK_AME_R3
+#define MATCH_MSRL_EW_X         0x4e00002b
+#define MASK_MSRL_EW_X          MASK_AME_R3
+#define MATCH_MXOR_EW           0x5000002b
+#define MASK_MXOR_EW            MASK_AME_R3
+#define MATCH_MXOR_EW_X         0x5200002b
+#define MASK_MXOR_EW_X          MASK_AME_R3
+#define MATCH_MCMOVGE_EW        0x5400002b
+#define MASK_MCMOVGE_EW         MASK_AME_R3
+#define MATCH_MCMOVLT_EW        0x5600002b
+#define MASK_MCMOVLT_EW         MASK_AME_R3
+#define MATCH_MCMPGE_EW         0x5800002b
+#define MASK_MCMPGE_EW          MASK_AME_R3
+#define MATCH_MCMPGE_EW_X       0x5a00002b
+#define MASK_MCMPGE_EW_X        MASK_AME_R3
+#define MATCH_MCMPLT_EW         0x5c00002b
+#define MASK_MCMPLT_EW          MASK_AME_R3
+#define MATCH_MCMPLT_EW_X       0x5e00002b
+#define MASK_MCMPLT_EW_X        MASK_AME_R3
+#define MATCH_MSELGE_EW         0x6000002b
+#define MASK_MSELGE_EW          MASK_AME_R3
+#define MATCH_MSELLT_EW         0x6200002b
+#define MASK_MSELLT_EW          MASK_AME_R3
+
+// R3 strided memory: funct7 fixed; rs1/rs2/rd free.
+#define MATCH_MLS_ST            0xa800002b
+#define MASK_MLS_ST             MASK_AME_R3
+#define MATCH_MLS_TST           0xaa00002b
+#define MASK_MLS_TST            MASK_AME_R3
+#define MATCH_MSS_ST            0xac00002b
+#define MASK_MSS_ST             MASK_AME_R3
+#define MATCH_MSS_TST           0xae00002b
+#define MASK_MSS_TST            MASK_AME_R3
+
+// R2 reduce/prefix: col forms in bank 0 (funct7=0x51); row/reduce forms in
+// bank 1 (funct7=0x52, xfunct5=0..8). Spec 8.92: mprefixadd.row is xfunct5=0.
+#define MATCH_MPREFIXADD_COL    0xa3f0002b
+#define MASK_MPREFIXADD_COL     MASK_AME_R2
+#define MATCH_MPREFIXADD_ROW    0xa400002b
+#define MASK_MPREFIXADD_ROW     MASK_AME_R2
+#define MATCH_MPREFIXMAX_COL    0xa410002b
+#define MASK_MPREFIXMAX_COL     MASK_AME_R2
+#define MATCH_MPREFIXMAX_ROW    0xa420002b
+#define MASK_MPREFIXMAX_ROW     MASK_AME_R2
+#define MATCH_MREDUCEADD_COL    0xa430002b
+#define MASK_MREDUCEADD_COL     MASK_AME_R2
+#define MATCH_MREDUCEADD_ROW    0xa440002b
+#define MASK_MREDUCEADD_ROW     MASK_AME_R2
+#define MATCH_MREDUCEMAX_COL    0xa450002b
+#define MASK_MREDUCEMAX_COL     MASK_AME_R2
+#define MATCH_MREDUCEMAX_ROW    0xa460002b
+#define MASK_MREDUCEMAX_ROW     MASK_AME_R2
+#define MATCH_MREDUCEMIN_COL    0xa470002b
+#define MASK_MREDUCEMIN_COL     MASK_AME_R2
+#define MATCH_MREDUCEMIN_ROW    0xa480002b
+#define MASK_MREDUCEMIN_ROW     MASK_AME_R2
+
+// R2 index writers (funct7=0x53, fixed rs1).
+#define MATCH_MCOLID_EW         0xa601002b
+#define MASK_MCOLID_EW          0xfffff07f
+#define MATCH_MROWID_EW         0xa601802b
+#define MASK_MROWID_EW          0xfffff07f
+
+// R3 permute: rd=md, rs1=xs1 (X scalar), rs2=ms2.
+#define MATCH_MCOLBCAST_EW_X    0x6400002b
+#define MASK_MCOLBCAST_EW_X     MASK_AME_R3
+#define MATCH_MCOLGATHER_EW     0x6600002b
+#define MASK_MCOLGATHER_EW      MASK_AME_R3
+#define MATCH_MCOLSHIFT_EW_X    0x6800002b
+#define MASK_MCOLSHIFT_EW_X     MASK_AME_R3
+#define MATCH_MROWBCAST_EW_X    0x6a00002b
+#define MASK_MROWBCAST_EW_X     MASK_AME_R3
+#define MATCH_MROWGATHER_EW     0x6c00002b
+#define MASK_MROWGATHER_EW      MASK_AME_R3
+#define MATCH_MROWSHIFT_EW_X    0x6e00002b
+#define MASK_MROWSHIFT_EW_X     MASK_AME_R3
+
+// Zip/unzip: rd fixed 0; rs1=ms1, rs2=ms2 (spec 8.24/8.25/8.108/8.109).
+#define MASK_AME_ZIP            0xfe007fff
+#define MATCH_MCOLUNZIP_EW      0xc200002b
+#define MASK_MCOLUNZIP_EW       MASK_AME_ZIP
+#define MATCH_MCOLZIP_EW        0xc400002b
+#define MASK_MCOLZIP_EW         MASK_AME_ZIP
+#define MATCH_MROWUNZIP_EW      0xc600002b
+#define MASK_MROWUNZIP_EW       MASK_AME_ZIP
+#define MATCH_MROWZIP_EW        0x7000002b
+#define MASK_MROWZIP_EW         MASK_AME_ZIP
+
+// Scatter-add/max (spec 8.111–8.114).
+#define MATCH_MROWSCATADD_EW    0x7200002b
+#define MASK_MROWSCATADD_EW     MASK_AME_R3
+#define MATCH_MCOLSCATADD_EW    0x7400002b
+#define MASK_MCOLSCATADD_EW     MASK_AME_R3
+#define MATCH_MROWSCATMAX_EW    0x7600002b
+#define MASK_MROWSCATMAX_EW     MASK_AME_R3
+#define MATCH_MCOLSCATMAX_EW    0x7800002b
+#define MASK_MCOLSCATMAX_EW     MASK_AME_R3
+
+// Pack / unpack one packed slot (spec 6.92 / 6.138). rs1=xs1, rs2=ms2.
+#define MATCH_MPACK_EW_X        0x7a00002b
+#define MASK_MPACK_EW_X         MASK_AME_R3
+#define MATCH_MUNPACK_EW_X      0x7c00002b
+#define MASK_MUNPACK_EW_X       MASK_AME_R3
+
+// FP scale / log-bias (spec 8.37–8.43, 8.95–8.96, 8.133–8.134).
+#define MATCH_MLDEXP_EW         0x7e00002b
+#define MASK_MLDEXP_EW          MASK_AME_R3
+#define MATCH_MLDEXP_EW_X       0x8000002b
+#define MASK_MLDEXP_EW_X        MASK_AME_R3
+#define MATCH_MLDEXPACC_EW      0x8200002b
+#define MASK_MLDEXPACC_EW       MASK_AME_R3
+#define MATCH_MLDEXPACC_EW_X    0x8400002b
+#define MASK_MLDEXPACC_EW_X     MASK_AME_R3
+#define MATCH_MLOG2SUB_EW       0x8600002b
+#define MASK_MLOG2SUB_EW        MASK_AME_R3
+#define MATCH_MLOG2SUB_EW_X     0x8800002b
+#define MASK_MLOG2SUB_EW_X      MASK_AME_R3
+#define MATCH_MRDEXP_EW         0x8a00002b
+#define MASK_MRDEXP_EW          MASK_AME_R3
+#define MATCH_MRDEXPACC_EW      0x8c00002b
+#define MASK_MRDEXPACC_EW       MASK_AME_R3
+#define MATCH_MSUBLOG2_EW       0x8e00002b
+#define MASK_MSUBLOG2_EW        MASK_AME_R3
+#define MATCH_MSUBLOG2_EW_X     0x9000002b
+#define MASK_MSUBLOG2_EW_X      MASK_AME_R3
+
+// Scalar ingress (spec 8.27): rd=md, rs1=xs1, rs2=xtyp.
+#define MATCH_MBCAST_M_X        0xb000002b
+#define MASK_MBCAST_M_X         MASK_AME_R3
+
+// Debug scalar mmove (spec 8.58–8.65). R3: rd=md/xd, rs1=xs2/ms2, rs2=xs1(pos).
+#define MATCH_MMOVE8_M_X        0xb200002b
+#define MASK_MMOVE8_M_X         MASK_AME_R3
+#define MATCH_MMOVE16_M_X       0xb400002b
+#define MASK_MMOVE16_M_X        MASK_AME_R3
+#define MATCH_MMOVE32_M_X       0xb600002b
+#define MASK_MMOVE32_M_X        MASK_AME_R3
+#define MATCH_MMOVE64_M_X       0xb800002b
+#define MASK_MMOVE64_M_X        MASK_AME_R3
+#define MATCH_MMOVE8_X_M        0xba00002b
+#define MASK_MMOVE8_X_M         MASK_AME_R3
+#define MATCH_MMOVE16_X_M       0xbc00002b
+#define MASK_MMOVE16_X_M        MASK_AME_R3
+#define MATCH_MMOVE32_X_M       0xbe00002b
+#define MASK_MMOVE32_X_M        MASK_AME_R3
+#define MATCH_MMOVE64_X_M       0xc000002b
+#define MASK_MMOVE64_X_M        MASK_AME_R3
+
+#define AME_MS_OFF              0
+#define AME_MS_INITIAL          1
+#define AME_MS_CLEAN            2
+#define AME_MS_DIRTY            3
+
+// Spec 5.2: CSR write that sets any applicable MS field to Off while
+// ameown.OWNED=1 is illegal and changes no state.
+#define AME_OWNED_MS_OFF_ILLEGAL(owned, val) \
+  ((owned) && (((val) & SSTATUS_AME_MS) == 0))
+
+#endif
+
+#ifdef DECLARE_INSN
+DECLARE_INSN(ame_acquire, MATCH_AME_ACQUIRE, MASK_AME_ACQUIRE)
+DECLARE_INSN(ame_release, MATCH_AME_RELEASE, MASK_AME_RELEASE)
+DECLARE_INSN(agettyp, MATCH_AGETTYP, MASK_AGETTYP)
+DECLARE_INSN(asettyp, MATCH_ASETTYP, MASK_ASETTYP)
+DECLARE_INSN(mgettyp, MATCH_MGETTYP, MASK_MGETTYP)
+DECLARE_INSN(msettyp, MATCH_MSETTYP, MASK_MSETTYP)
+DECLARE_INSN(mabs_ew, MATCH_MABS_EW, MASK_MABS_EW)
+DECLARE_INSN(mconv_ew, MATCH_MCONV_EW, MASK_MCONV_EW)
+DECLARE_INSN(mfrintm_ew, MATCH_MFRINTM_EW, MASK_MFRINTM_EW)
+DECLARE_INSN(mfrintn_ew, MATCH_MFRINTN_EW, MASK_MFRINTN_EW)
+DECLARE_INSN(mfrintp_ew, MATCH_MFRINTP_EW, MASK_MFRINTP_EW)
+DECLARE_INSN(mfrintz_ew, MATCH_MFRINTZ_EW, MASK_MFRINTZ_EW)
+DECLARE_INSN(mcos_ew, MATCH_MCOS_EW, MASK_MCOS_EW)
+DECLARE_INSN(mexp2_ew, MATCH_MEXP2_EW, MASK_MEXP2_EW)
+DECLARE_INSN(mlog2_ew, MATCH_MLOG2_EW, MASK_MLOG2_EW)
+DECLARE_INSN(mrec_ew, MATCH_MREC_EW, MASK_MREC_EW)
+DECLARE_INSN(mrsqrt_ew, MATCH_MRSQRT_EW, MASK_MRSQRT_EW)
+DECLARE_INSN(msin_ew, MATCH_MSIN_EW, MASK_MSIN_EW)
+DECLARE_INSN(msqrt_ew, MATCH_MSQRT_EW, MASK_MSQRT_EW)
+DECLARE_INSN(mtanh_ew, MATCH_MTANH_EW, MASK_MTANH_EW)
+DECLARE_INSN(mls_1r, MATCH_MLS_1R, MASK_MLS_1R)
+DECLARE_INSN(mss_1r, MATCH_MSS_1R, MASK_MSS_1R)
+DECLARE_INSN(mls_cm, MATCH_MLS_CM, MASK_MLS_CM)
+DECLARE_INSN(mss_cm, MATCH_MSS_CM, MASK_MSS_CM)
+DECLARE_INSN(mls_rm, MATCH_MLS_RM, MASK_MLS_RM)
+DECLARE_INSN(mss_rm, MATCH_MSS_RM, MASK_MSS_RM)
+DECLARE_INSN(mls_st, MATCH_MLS_ST, MASK_MLS_ST)
+DECLARE_INSN(mss_st, MATCH_MSS_ST, MASK_MSS_ST)
+DECLARE_INSN(mls_tst, MATCH_MLS_TST, MASK_MLS_TST)
+DECLARE_INSN(mss_tst, MATCH_MSS_TST, MASK_MSS_TST)
+DECLARE_INSN(mmov_m_a, MATCH_MMOV_M_A, MASK_MMOV_M_A)
+DECLARE_INSN(mmov_a_m, MATCH_MMOV_A_M, MASK_MMOV_A_M)
+DECLARE_INSN(mmov_m_m, MATCH_MMOV_M_M, MASK_MMOV_M_M)
+DECLARE_INSN(mzero_2d_acc, MATCH_MZERO_2D_ACC, MASK_MZERO_2D_ACC)
+DECLARE_INSN(mzero_2d_m, MATCH_MZERO_2D_M, MASK_MZERO_2D_M)
+DECLARE_INSN(mmulacc_2d, MATCH_MMULACC_2D, MASK_MMULACC_2D)
+DECLARE_INSN(mmulaccneg_2d, MATCH_MMULACCNEG_2D, MASK_MMULACCNEG_2D)
+DECLARE_INSN(mmulatacc_2d, MATCH_MMULATACC_2D, MASK_MMULATACC_2D)
+DECLARE_INSN(mmulataccneg_2d, MATCH_MMULATACCNEG_2D, MASK_MMULATACCNEG_2D)
+DECLARE_INSN(mmulbtacc_2d, MATCH_MMULBTACC_2D, MASK_MMULBTACC_2D)
+DECLARE_INSN(mmulbtaccneg_2d, MATCH_MMULBTACCNEG_2D, MASK_MMULBTACCNEG_2D)
+DECLARE_INSN(mabsdiff_ew, MATCH_MABSDIFF_EW, MASK_MABSDIFF_EW)
+DECLARE_INSN(mabsdiff_ew_x, MATCH_MABSDIFF_EW_X, MASK_MABSDIFF_EW_X)
+DECLARE_INSN(madd_ew, MATCH_MADD_EW, MASK_MADD_EW)
+DECLARE_INSN(madd_ew_x, MATCH_MADD_EW_X, MASK_MADD_EW_X)
+DECLARE_INSN(mhdiff_ew, MATCH_MHDIFF_EW, MASK_MHDIFF_EW)
+DECLARE_INSN(mhdiff_ew_x, MATCH_MHDIFF_EW_X, MASK_MHDIFF_EW_X)
+DECLARE_INSN(mmax_ew, MATCH_MMAX_EW, MASK_MMAX_EW)
+DECLARE_INSN(mmax_ew_x, MATCH_MMAX_EW_X, MASK_MMAX_EW_X)
+DECLARE_INSN(mmean_ew, MATCH_MMEAN_EW, MASK_MMEAN_EW)
+DECLARE_INSN(mmean_ew_x, MATCH_MMEAN_EW_X, MASK_MMEAN_EW_X)
+DECLARE_INSN(mmin_ew, MATCH_MMIN_EW, MASK_MMIN_EW)
+DECLARE_INSN(mmin_ew_x, MATCH_MMIN_EW_X, MASK_MMIN_EW_X)
+DECLARE_INSN(mmul_ew, MATCH_MMUL_EW, MASK_MMUL_EW)
+DECLARE_INSN(mmul_ew_x, MATCH_MMUL_EW_X, MASK_MMUL_EW_X)
+DECLARE_INSN(mmulacc_ew, MATCH_MMULACC_EW, MASK_MMULACC_EW)
+DECLARE_INSN(mmulacc_ew_x, MATCH_MMULACC_EW_X, MASK_MMULACC_EW_X)
+DECLARE_INSN(mmulaccneg_ew, MATCH_MMULACCNEG_EW, MASK_MMULACCNEG_EW)
+DECLARE_INSN(mmulaccneg_ew_x, MATCH_MMULACCNEG_EW_X, MASK_MMULACCNEG_EW_X)
+DECLARE_INSN(mmuladd_ew, MATCH_MMULADD_EW, MASK_MMULADD_EW)
+DECLARE_INSN(mmuladd_ew_x, MATCH_MMULADD_EW_X, MASK_MMULADD_EW_X)
+DECLARE_INSN(mmulneg_ew, MATCH_MMULNEG_EW, MASK_MMULNEG_EW)
+DECLARE_INSN(mmulneg_ew_x, MATCH_MMULNEG_EW_X, MASK_MMULNEG_EW_X)
+DECLARE_INSN(mmulsub_ew, MATCH_MMULSUB_EW, MASK_MMULSUB_EW)
+DECLARE_INSN(mmulsub_ew_x, MATCH_MMULSUB_EW_X, MASK_MMULSUB_EW_X)
+DECLARE_INSN(msub_ew, MATCH_MSUB_EW, MASK_MSUB_EW)
+DECLARE_INSN(msub_ew_x, MATCH_MSUB_EW_X, MASK_MSUB_EW_X)
+DECLARE_INSN(mand_ew, MATCH_MAND_EW, MASK_MAND_EW)
+DECLARE_INSN(mand_ew_x, MATCH_MAND_EW_X, MASK_MAND_EW_X)
+DECLARE_INSN(mandnot_ew, MATCH_MANDNOT_EW, MASK_MANDNOT_EW)
+DECLARE_INSN(mandnot_ew_x, MATCH_MANDNOT_EW_X, MASK_MANDNOT_EW_X)
+DECLARE_INSN(mor_ew, MATCH_MOR_EW, MASK_MOR_EW)
+DECLARE_INSN(mor_ew_x, MATCH_MOR_EW_X, MASK_MOR_EW_X)
+DECLARE_INSN(mornot_ew, MATCH_MORNOT_EW, MASK_MORNOT_EW)
+DECLARE_INSN(mornot_ew_x, MATCH_MORNOT_EW_X, MASK_MORNOT_EW_X)
+DECLARE_INSN(mxor_ew, MATCH_MXOR_EW, MASK_MXOR_EW)
+DECLARE_INSN(mxor_ew_x, MATCH_MXOR_EW_X, MASK_MXOR_EW_X)
+DECLARE_INSN(msll_ew, MATCH_MSLL_EW, MASK_MSLL_EW)
+DECLARE_INSN(msll_ew_x, MATCH_MSLL_EW_X, MASK_MSLL_EW_X)
+DECLARE_INSN(msra_ew, MATCH_MSRA_EW, MASK_MSRA_EW)
+DECLARE_INSN(msra_ew_x, MATCH_MSRA_EW_X, MASK_MSRA_EW_X)
+DECLARE_INSN(msrl_ew, MATCH_MSRL_EW, MASK_MSRL_EW)
+DECLARE_INSN(msrl_ew_x, MATCH_MSRL_EW_X, MASK_MSRL_EW_X)
+DECLARE_INSN(mcmovge_ew, MATCH_MCMOVGE_EW, MASK_MCMOVGE_EW)
+DECLARE_INSN(mcmovlt_ew, MATCH_MCMOVLT_EW, MASK_MCMOVLT_EW)
+DECLARE_INSN(mcmpge_ew, MATCH_MCMPGE_EW, MASK_MCMPGE_EW)
+DECLARE_INSN(mcmpge_ew_x, MATCH_MCMPGE_EW_X, MASK_MCMPGE_EW_X)
+DECLARE_INSN(mcmplt_ew, MATCH_MCMPLT_EW, MASK_MCMPLT_EW)
+DECLARE_INSN(mcmplt_ew_x, MATCH_MCMPLT_EW_X, MASK_MCMPLT_EW_X)
+DECLARE_INSN(mselge_ew, MATCH_MSELGE_EW, MASK_MSELGE_EW)
+DECLARE_INSN(msellt_ew, MATCH_MSELLT_EW, MASK_MSELLT_EW)
+DECLARE_INSN(mprefixadd_col, MATCH_MPREFIXADD_COL, MASK_MPREFIXADD_COL)
+DECLARE_INSN(mprefixadd_row, MATCH_MPREFIXADD_ROW, MASK_MPREFIXADD_ROW)
+DECLARE_INSN(mprefixmax_col, MATCH_MPREFIXMAX_COL, MASK_MPREFIXMAX_COL)
+DECLARE_INSN(mprefixmax_row, MATCH_MPREFIXMAX_ROW, MASK_MPREFIXMAX_ROW)
+DECLARE_INSN(mreduceadd_col, MATCH_MREDUCEADD_COL, MASK_MREDUCEADD_COL)
+DECLARE_INSN(mreduceadd_row, MATCH_MREDUCEADD_ROW, MASK_MREDUCEADD_ROW)
+DECLARE_INSN(mreducemax_col, MATCH_MREDUCEMAX_COL, MASK_MREDUCEMAX_COL)
+DECLARE_INSN(mreducemax_row, MATCH_MREDUCEMAX_ROW, MASK_MREDUCEMAX_ROW)
+DECLARE_INSN(mreducemin_col, MATCH_MREDUCEMIN_COL, MASK_MREDUCEMIN_COL)
+DECLARE_INSN(mreducemin_row, MATCH_MREDUCEMIN_ROW, MASK_MREDUCEMIN_ROW)
+DECLARE_INSN(mcolid_ew, MATCH_MCOLID_EW, MASK_MCOLID_EW)
+DECLARE_INSN(mrowid_ew, MATCH_MROWID_EW, MASK_MROWID_EW)
+DECLARE_INSN(mcolbcast_ew_x, MATCH_MCOLBCAST_EW_X, MASK_MCOLBCAST_EW_X)
+DECLARE_INSN(mcolgather_ew, MATCH_MCOLGATHER_EW, MASK_MCOLGATHER_EW)
+DECLARE_INSN(mcolshift_ew_x, MATCH_MCOLSHIFT_EW_X, MASK_MCOLSHIFT_EW_X)
+DECLARE_INSN(mrowbcast_ew_x, MATCH_MROWBCAST_EW_X, MASK_MROWBCAST_EW_X)
+DECLARE_INSN(mrowgather_ew, MATCH_MROWGATHER_EW, MASK_MROWGATHER_EW)
+DECLARE_INSN(mrowshift_ew_x, MATCH_MROWSHIFT_EW_X, MASK_MROWSHIFT_EW_X)
+DECLARE_INSN(mcolunzip_ew, MATCH_MCOLUNZIP_EW, MASK_MCOLUNZIP_EW)
+DECLARE_INSN(mcolzip_ew, MATCH_MCOLZIP_EW, MASK_MCOLZIP_EW)
+DECLARE_INSN(mrowunzip_ew, MATCH_MROWUNZIP_EW, MASK_MROWUNZIP_EW)
+DECLARE_INSN(mrowzip_ew, MATCH_MROWZIP_EW, MASK_MROWZIP_EW)
+DECLARE_INSN(mrowscatadd_ew, MATCH_MROWSCATADD_EW, MASK_MROWSCATADD_EW)
+DECLARE_INSN(mcolscatadd_ew, MATCH_MCOLSCATADD_EW, MASK_MCOLSCATADD_EW)
+DECLARE_INSN(mrowscatmax_ew, MATCH_MROWSCATMAX_EW, MASK_MROWSCATMAX_EW)
+DECLARE_INSN(mcolscatmax_ew, MATCH_MCOLSCATMAX_EW, MASK_MCOLSCATMAX_EW)
+DECLARE_INSN(mpack_ew_x, MATCH_MPACK_EW_X, MASK_MPACK_EW_X)
+DECLARE_INSN(munpack_ew_x, MATCH_MUNPACK_EW_X, MASK_MUNPACK_EW_X)
+DECLARE_INSN(mbcast_m_x, MATCH_MBCAST_M_X, MASK_MBCAST_M_X)
+DECLARE_INSN(mldexp_ew, MATCH_MLDEXP_EW, MASK_MLDEXP_EW)
+DECLARE_INSN(mldexp_ew_x, MATCH_MLDEXP_EW_X, MASK_MLDEXP_EW_X)
+DECLARE_INSN(mldexpacc_ew, MATCH_MLDEXPACC_EW, MASK_MLDEXPACC_EW)
+DECLARE_INSN(mldexpacc_ew_x, MATCH_MLDEXPACC_EW_X, MASK_MLDEXPACC_EW_X)
+DECLARE_INSN(mlog2sub_ew, MATCH_MLOG2SUB_EW, MASK_MLOG2SUB_EW)
+DECLARE_INSN(mlog2sub_ew_x, MATCH_MLOG2SUB_EW_X, MASK_MLOG2SUB_EW_X)
+DECLARE_INSN(mrdexp_ew, MATCH_MRDEXP_EW, MASK_MRDEXP_EW)
+DECLARE_INSN(mrdexpacc_ew, MATCH_MRDEXPACC_EW, MASK_MRDEXPACC_EW)
+DECLARE_INSN(msublog2_ew, MATCH_MSUBLOG2_EW, MASK_MSUBLOG2_EW)
+DECLARE_INSN(msublog2_ew_x, MATCH_MSUBLOG2_EW_X, MASK_MSUBLOG2_EW_X)
+DECLARE_INSN(mmove8_m_x, MATCH_MMOVE8_M_X, MASK_MMOVE8_M_X)
+DECLARE_INSN(mmove16_m_x, MATCH_MMOVE16_M_X, MASK_MMOVE16_M_X)
+DECLARE_INSN(mmove32_m_x, MATCH_MMOVE32_M_X, MASK_MMOVE32_M_X)
+DECLARE_INSN(mmove64_m_x, MATCH_MMOVE64_M_X, MASK_MMOVE64_M_X)
+DECLARE_INSN(mmove8_x_m, MATCH_MMOVE8_X_M, MASK_MMOVE8_X_M)
+DECLARE_INSN(mmove16_x_m, MATCH_MMOVE16_X_M, MASK_MMOVE16_X_M)
+DECLARE_INSN(mmove32_x_m, MATCH_MMOVE32_X_M, MASK_MMOVE32_X_M)
+DECLARE_INSN(mmove64_x_m, MATCH_MMOVE64_X_M, MASK_MMOVE64_X_M)
+#endif

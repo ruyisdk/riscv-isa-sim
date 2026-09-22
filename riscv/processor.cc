@@ -11,6 +11,7 @@
 #include "disasm.h"
 #include "platform.h"
 #include "vector_unit.h"
+#include "ame_encoding.h"
 #include "debug_defines.h"
 #include <cinttypes>
 #include <cmath>
@@ -43,6 +44,7 @@ processor_t::processor_t(const char* isa_str, const char* priv_str,
   last_pc(1), executions(1), TM(cfg->trigger_count), geilen(GEILEN)
 {
   VU.p = this;
+  AMU.p = this;
   TM.proc = this;
 
 #ifndef HAVE_INT128
@@ -159,6 +161,10 @@ void processor_t::reset()
   mmu->flush_tlb();
   if (any_vector_extensions())
     VU.reset();
+  if (any_ame_extensions()) {
+    AMU.set_backend(sim ? sim->get_ame_backend() : nullptr);
+    AMU.reset();
+  }
 
   if (n_pmp > 0) {
     // For backwards compatibility with software that is unaware of PMP,
@@ -633,6 +639,14 @@ void processor_t::disasm(insn_t insn)
 void processor_t::put_csr(int which, reg_t val)
 {
   val = zext_xlen(val);
+  // Spec 5.2: CSR write that sets any applicable MS field to Off while
+  // OWNED is illegal and changes no state. vsstatus.MS is applicable only
+  // when V=1 (spec 2.1.1).
+  if (any_ame_extensions() && AMU.owned &&
+      (which == CSR_MSTATUS || which == CSR_SSTATUS ||
+       (which == CSR_VSSTATUS && state.v)) &&
+      AME_OWNED_MS_OFF_ILLEGAL(true, val))
+    throw trap_illegal_instruction(0);
   auto search = state.csrmap.find(which);
   if (search != state.csrmap.end()) {
     search->second->write(val);
@@ -743,6 +757,7 @@ void processor_t::register_base_instructions()
     bool name##_overlapping = false;
 
   #include "encoding.h"
+  #include "ame_encoding.h"
   #undef DECLARE_INSN
 
   #define DEFINE_INSN(name) \

@@ -274,6 +274,9 @@ void sim_t::interactive()
   funcs["r"] = funcs["run"];
   funcs["rs"] = &sim_t::interactive_run_silent;
   funcs["vreg"] = &sim_t::interactive_vreg;
+  funcs["ame"] = &sim_t::interactive_ame;
+  funcs["mreg"] = &sim_t::interactive_mreg;
+  funcs["areg"] = &sim_t::interactive_areg;
   funcs["reg"] = &sim_t::interactive_reg;
   funcs["freg"] = &sim_t::interactive_freg;
   funcs["fregh"] = &sim_t::interactive_fregh;
@@ -372,6 +375,9 @@ void sim_t::interactive_help(const std::string& cmd, const std::vector<std::stri
     "fregs <core> <reg>              # Display single precision <reg> in <core>\n"
     "fregd <core> <reg>              # Display double precision <reg> in <core>\n"
     "vreg <core> [reg]               # Display vector [reg] (all if omitted) in <core>\n"
+    "ame <core>                      # Display AME parameters and ownership in <core>\n"
+    "mreg <core> [reg]               # Display AME M [reg] (all if omitted) in <core>\n"
+    "areg <core> [reg]               # Display AME Acc [reg] (all if omitted) in <core>\n"
     "pc <core>                       # Show current PC in <core>\n"
     "insn <core>                     # Show current instruction corresponding to PC in <core>\n"
     "priv <core>                     # Show current privilege level in <core>\n"
@@ -602,6 +608,65 @@ void sim_t::interactive_vreg(const std::string& cmd, const std::vector<std::stri
   } else {
     out << "Processor selected does not support any vector extensions" << std::endl;
   }
+}
+
+void sim_t::interactive_ame(const std::string& cmd, const std::vector<std::string>& args)
+{
+  if (args.size() < 1)
+    throw trap_interactive();
+  std::ostream out(sout_.rdbuf());
+  processor_t *p = get_core(args[0]);
+  if (!p->any_ame_extensions()) {
+    out << "Processor selected does not support Ztt/AME" << std::endl;
+    return;
+  }
+  p->AMU.dump_summary(out);
+}
+
+void sim_t::interactive_mreg(const std::string& cmd, const std::vector<std::string>& args)
+{
+  if (args.size() < 1)
+    throw trap_interactive();
+  std::ostream out(sout_.rdbuf());
+  processor_t *p = get_core(args[0]);
+  if (!p->any_ame_extensions()) {
+    out << "Processor selected does not support Ztt/AME" << std::endl;
+    return;
+  }
+  int rstart = 0;
+  int rend = int(p->AMU.num_m_regs);
+  if (args.size() >= 2) {
+    rstart = strtol(args[1].c_str(), NULL, 0);
+    if (rstart < 0 || rstart >= rend)
+      throw trap_interactive();
+    rend = rstart + 1;
+  }
+  p->AMU.dump_summary(out);
+  for (int r = rstart; r < rend; ++r)
+    p->AMU.dump_m(out, r);
+}
+
+void sim_t::interactive_areg(const std::string& cmd, const std::vector<std::string>& args)
+{
+  if (args.size() < 1)
+    throw trap_interactive();
+  std::ostream out(sout_.rdbuf());
+  processor_t *p = get_core(args[0]);
+  if (!p->any_ame_extensions()) {
+    out << "Processor selected does not support Ztt/AME" << std::endl;
+    return;
+  }
+  int rstart = 0;
+  int rend = int(p->AMU.num_acc_regs);
+  if (args.size() >= 2) {
+    rstart = strtol(args[1].c_str(), NULL, 0);
+    if (rstart < 0 || rstart >= rend)
+      throw trap_interactive();
+    rend = rstart + 1;
+  }
+  p->AMU.dump_summary(out);
+  for (int r = rstart; r < rend; ++r)
+    p->AMU.dump_acc(out, r);
 }
 
 void sim_t::interactive_reg(const std::string& cmd, const std::vector<std::string>& args)
