@@ -122,6 +122,49 @@ static void test_scalar_and_pack_slots() {
   expect(unpacked == src, "unpack inverse");
 }
 
+// Spec 6.2.4 / manual instructions.json: when sizeof(src_dtype) is greater
+// than XLEN, X[rs1] is zero-extended to that width. On RV32 the host register
+// storage may carry sign-extension above XLEN, which must not leak into an
+// Int64/Uint64/FP64 (or wider) scalar.
+static void test_scalar_xlen_mask() {
+  const uint32_t i64 = 0x40000040; // Int64
+  const uint32_t f64 = 0x2C300140; // FP64 (exp_width 11)
+
+  uint8_t out[8] = {};
+
+  // RV32 Int64: only the low 32 bits of X[rs1] are defined.
+  expect(ame_convert_scalar(i64, uint64_t(0xFFFFFFFFFFFFFFFFull), 32, i64, out),
+         "scalar i64->i64 xlen32");
+  const uint8_t i64_x32[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0};
+  expect(std::memcmp(out, i64_x32, sizeof(out)) == 0,
+         "scalar i64->i64 xlen32 val");
+
+  // RV32 FP64: the register holds 0x0000000080000000 (-0.0), not the
+  // sign-extended NaN pattern 0xFFFFFFFF80000000.
+  std::memset(out, 0, sizeof(out));
+  expect(ame_convert_scalar(f64, uint64_t(0xFFFFFFFF80000000ull), 32, f64, out),
+         "scalar f64->f64 xlen32");
+  const uint8_t f64_x32[8] = {0, 0, 0, 0x80, 0, 0, 0, 0};
+  expect(std::memcmp(out, f64_x32, sizeof(out)) == 0,
+         "scalar f64->f64 xlen32 val");
+
+  // RV64 boundary: no XLEN masking, 0xFFFFFFFFFFFFFFFF stays -1.
+  std::memset(out, 0, sizeof(out));
+  expect(ame_convert_scalar(i64, uint64_t(0xFFFFFFFFFFFFFFFFull), 64, i64, out),
+         "scalar i64->i64 xlen64");
+  const uint8_t i64_x64[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  expect(std::memcmp(out, i64_x64, sizeof(out)) == 0,
+         "scalar i64->i64 xlen64 val");
+
+  // RV64 boundary: FP64 patterns pass through unchanged.
+  std::memset(out, 0, sizeof(out));
+  expect(ame_convert_scalar(f64, uint64_t(0x3FF0000000000000ull), 64, f64, out),
+         "scalar f64->f64 xlen64");
+  const uint8_t f64_x64[8] = {0, 0, 0, 0, 0, 0, 0xF0, 0x3F};
+  expect(std::memcmp(out, f64_x64, sizeof(out)) == 0,
+         "scalar f64->f64 xlen64 val");
+}
+
 int main() {
   isa_parser_t isa("rv64i_ztt", "MSU");
   expect(isa.extension_enabled(EXT_ZTT), "ztt enabled");
@@ -129,6 +172,7 @@ int main() {
   test_int_widen_narrow();
   test_int_fp32();
   test_scalar_and_pack_slots();
+  test_scalar_xlen_mask();
   fprintf(stderr, "ame-elementwise-convert: ok\n");
   return 0;
 }
