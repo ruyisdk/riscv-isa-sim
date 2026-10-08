@@ -148,7 +148,8 @@ class amestatus_csr_t final : public ame_csr_t {
 
  protected:
   bool unlogged_write(const reg_t val) noexcept override {
-    amu->amestatus = val & AMESTATUS_UN;
+    // Local diagnostic fix: UN is write-zero-to-clear, not writable-set.
+    amu->amestatus &= val & AMESTATUS_UN;
     return true;
   }
 };
@@ -533,8 +534,7 @@ void ame_unit_t::load_mem(mmu_t* mmu, reg_t addr, uint8_t* dst, reg_t len) {
 }
 
 void ame_unit_t::store_mem(mmu_t* mmu, reg_t addr, const uint8_t* src, reg_t len) {
-  for (reg_t i = 0; i < len; i++)
-    mmu->store<uint8_t>(addr + i, src[i]);
+  mmu->store_ram_spans({{addr, src, size_t(len)}});
 }
 
 void ame_unit_t::mzero_m(reg_t md) {
@@ -671,12 +671,13 @@ void ame_unit_t::load_segments(mmu_t* mmu, reg_t base, reg_t stride, uint32_t ns
 
 void ame_unit_t::store_segments(mmu_t* mmu, reg_t base, reg_t stride, uint32_t nseg,
                                 reg_t seg_bytes, const uint8_t* src) {
-  // Spec 2.6: later segment wins overlap. Stage first so a fault mid-loop
-  // does not leave a torn mix of old memory and new segment bytes from this
-  // instruction; Spike still takes the first faulting store as the trap.
-  std::vector<uint8_t> staged(src, src + size_t(nseg) * size_t(seg_bytes));
+  // Validate the whole instruction, not one independently committed segment.
+  std::vector<mmu_t::ram_store_span> spans;
+  spans.reserve(nseg);
   for (uint32_t s = 0; s < nseg; s++)
-    store_mem(mmu, wrap_seg_addr(base, stride, s), staged.data() + s * seg_bytes, seg_bytes);
+    spans.push_back({wrap_seg_addr(base, stride, s), src + s * seg_bytes,
+                     size_t(seg_bytes)});
+  mmu->store_ram_spans(spans);
 }
 
 void ame_unit_t::mls_rm(reg_t md, reg_t addr, mmu_t* mmu) {

@@ -412,6 +412,66 @@ void mmu_t::store_slow_path(reg_t original_addr, std::size_t len,
   }
 }
 
+void mmu_t::store_ram_spans(const std::vector<ram_store_span>& spans)
+{
+  struct prepared_byte {
+    reg_t vaddr;
+    reg_t paddr;
+    char* host;
+    uint8_t value;
+  };
+  std::vector<prepared_byte> prepared;
+  const auto previous_trigger = matched_trigger;
+  try {
+    // Resolve every destination before writing, including later segments.
+    // Do not retranslate at commit: a destination may alias a page table.
+    for (const auto& span : spans) {
+      for (size_t i = 0; i < span.len; ++i) {
+        const reg_t addr = span.addr + i;
+        const uint8_t value = span.data[i];
+        const auto access = generate_access_info(addr, STORE, {});
+        if (check_triggers_store)
+          check_triggers(triggers::OPERATION_STORE, access.transformed_vaddr,
+                         access.effective_virt, 1, &value);
+        const reg_t paddr = translate(access, 1);
+        char* host = sim->addr_to_mem(paddr);
+        // Local RAM/PMA contract: simif_t cannot prepare a device transaction.
+        if (!host)
+          throw trap_store_access_fault(access.effective_virt,
+                                        access.transformed_vaddr, 0, 0);
+        prepared.push_back({addr, paddr, host, value});
+      }
+    }
+    if (proc && unlikely(proc->get_log_commits_enabled())) {
+      auto& log = proc->state.log_mem_write;
+      log.reserve(log.size() + prepared.size());
+    }
+    if (proc && proc->extension_enabled(EXT_ZICCID)) {
+      for (const auto& byte : prepared) {
+        for (auto [_, hart] : sim->get_harts())
+          hart->mmu->flush_itlb_ppn(byte.paddr >> PGSHIFT);
+        tlb_store_reverse_tags.insert(byte.paddr >> PGSHIFT);
+      }
+    }
+  } catch (...) {
+    // A failed instruction must not leave a deferred after-store trigger.
+    matched_trigger = previous_trigger;
+    throw;
+  }
+
+  // Ordered RAM writes cannot produce an architectural access/page fault.
+  // This ordering also implements the later-segment-wins overlap rule.
+  for (const auto& byte : prepared) {
+    MMU_OBSERVE_STORE(byte.vaddr, byte.value, 1);
+    *byte.host = byte.value;
+    if (tracer.interested_in_range(byte.paddr, byte.paddr + 1, STORE))
+      tracer.trace(byte.paddr, 1, STORE);
+    if (proc && unlikely(proc->get_log_commits_enabled()))
+      proc->state.log_mem_write.push_back(
+        std::make_tuple(byte.vaddr, byte.value, 1));
+  }
+}
+
 bool mmu_t::flush_tlb_ppn(reg_t ppn, dtlb_entry_t* tlb, reverse_tags_t& filter)
 {
   if (!filter.contains(ppn))

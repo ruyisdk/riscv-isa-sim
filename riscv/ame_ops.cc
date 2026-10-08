@@ -961,6 +961,26 @@ __int128 clamp_wide128(__int128 v, uint32_t size_bits, bool is_signed, bool satu
   return v;
 }
 
+// Convert a mathematical sign/magnitude without losing the unsigned 128th bit.
+// Fold addition needs one extra carry bit; integer conversion uses hi == 0.
+u128 convert_int_magnitude(bool neg, const u256w& mag,
+                           const ame_dtype_t& dst, bool& sat) {
+  const u128 mask = ~u128(0) >> (128 - dst.size_bits);
+  if (dst.saturate) {
+    if (!dst.is_signed && neg && (mag.hi || mag.lo)) {
+      sat = true;
+      return 0;
+    }
+    const u128 sign = u128(1) << (dst.size_bits - 1);
+    const u128 limit = dst.is_signed ? (neg ? sign : sign - 1) : mask;
+    if (mag.hi || mag.lo > limit) {
+      sat = true;
+      return (neg ? u128(0) - limit : limit) & mask;
+    }
+  }
+  return (neg ? u128(0) - mag.lo : mag.lo) & mask;
+}
+
 int64_t clamp_wide(__int128 v, uint32_t size_bits, bool is_signed, bool saturate,
                    bool* sat) {
   return int64_t(uint64_t(clamp_wide128(v, size_bits, is_signed, saturate, sat)));
@@ -1458,6 +1478,46 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
     return true;
   }
 
+  if (ame_is_bf16(key) &&
+      (op == ame_ew_op_t::MULACC || op == ame_ew_op_t::MULACCNEG ||
+       op == ame_ew_op_t::MULADD || op == ame_ew_op_t::MULSUB)) {
+    // Ordinary FP32 rounding followed by BF16 rounding is not a fused result.
+    // bf16_mulAdd uses an exact product and round-to-odd intermediate instead.
+    softfloat_roundingMode = ame_fp_rm_to_softfloat(dt.fp_rm);
+    const bool jam = ame_rm_is_rno(dt.fp_rm);
+    uint8_t local_ff = 0;
+    for (uint32_t i = 0; i < nelem; i++) {
+      softfloat_exceptionFlags = 0;
+      const bfloat16_t av{uint16_t(load_int_at(a, i, 16, false))};
+      const bfloat16_t bv{uint16_t(load_int_at(b, i, 16, false))};
+      const bfloat16_t old{uint16_t(load_int_at(d, i, 16, false))};
+      bfloat16_t dv;
+      switch (op) {
+        case ame_ew_op_t::MULACC: dv = bf16_mulAdd(av, bv, old); break;
+        case ame_ew_op_t::MULACCNEG:
+          dv = bf16_mulAdd(bfloat16_t{uint16_t(av.v ^ 0x8000)}, bv, old);
+          break;
+        case ame_ew_op_t::MULADD: dv = bf16_mulAdd(bv, old, av); break;
+        case ame_ew_op_t::MULSUB:
+          dv = bf16_mulAdd(bfloat16_t{uint16_t(bv.v ^ 0x8000)}, old, av);
+          break;
+        default: return false;
+      }
+      if (isNaNBF16UI(dv.v))
+        dv.v = defaultNaNBF16UI;
+      dv.v = saturate_inf_raw(dv.v, key, dt.has_inf);
+      if (jam && (softfloat_exceptionFlags & softfloat_flag_inexact) &&
+          !(softfloat_exceptionFlags & softfloat_flag_overflow) &&
+          !isNaNBF16UI(dv.v))
+        dv.v |= 1;
+      local_ff |= softfloat_to_ame_fflags(softfloat_exceptionFlags);
+      store_int_at(d, i, 16, dv.v);
+    }
+    softfloat_exceptionFlags = local_ff;
+    if (fflags) *fflags |= local_ff;
+    return true;
+  }
+
   if (is_fp_family(key) && !is_fp32(key)) {
     std::vector<uint8_t> fa(size_t(nelem) * 4), fd(size_t(nelem) * 4, 0);
     std::vector<uint8_t> fb;
@@ -1560,6 +1620,8 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
         case ame_ew_op_t::EXP2:
         case ame_ew_op_t::LOG2: {
           if (isNaNF32UI(av.v)) {
+            if (softfloat_isSigNaNF32UI(av.v))
+              softfloat_exceptionFlags |= softfloat_flag_invalid;
             dv = float32_t{defaultNaNF32UI};
             break;
           }
@@ -1829,6 +1891,28 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
 
 namespace {
 
+// Diagnostic FP32 exponent path.  Clamping at +/-512 preserves every FP32
+// rounding decision, including addition of a finite FP32 old destination,
+// while keeping the scaled operand normal and finite in binary64.
+float32_t f32_scale_add_pow2(float32_t a, int64_t exp, float32_t old,
+                            bool accumulate) {
+  exp = std::max<int64_t>(-512, std::min<int64_t>(512, exp));
+  const float64_t scale{uint64_t(exp + 1023) << 52};
+  const float64_t av = f32_to_f64(a);
+  const float64_t cv = accumulate ? f32_to_f64(old) : float64_t{0};
+  const uint_fast8_t rm = softfloat_roundingMode;
+  // Jam the wider intermediate so a tiny addend cannot create an erroneous
+  // tie when the single architectural rounding to FP32 follows.
+  softfloat_roundingMode = softfloat_round_odd;
+  const float64_t wide = accumulate ? f64_mulAdd(av, scale, cv)
+                                   : f64_mul(av, scale);
+  softfloat_roundingMode = rm;
+  if (accumulate && wide.v == 0 && rm == softfloat_round_min &&
+      ((a.v ^ old.v) & 0x80000000u))
+    return float32_t{0x80000000u};
+  return f64_to_f32(wide);
+}
+
 float32_t f32_scale_pow2(float32_t a, int64_t exp) {
   if (isNaNF32UI(a.v))
     return float32_t{defaultNaNF32UI};
@@ -1884,9 +1968,10 @@ __int128 int_scale_pow2(int64_t a, int64_t exp, bool is_signed, uint32_t size_bi
 
 } // namespace
 
-bool ame_host_ldexp(uint32_t data_dtype, uint32_t exp_dtype, uint32_t nelem,
+static bool ame_host_ldexp_impl(uint32_t data_dtype, uint32_t exp_dtype, uint32_t nelem,
                     const uint8_t* data, const uint8_t* expn, uint8_t* dest,
-                    bool accumulate, bool negate_exp, uint8_t* fflags, uint8_t* xsat) {
+                    bool accumulate, bool negate_exp, uint8_t* fflags, uint8_t* xsat,
+                    bool exact_fp32) {
   const ame_dtype_t dd = ame_parse_dtype(data_dtype);
   const ame_dtype_t de = ame_parse_dtype(exp_dtype);
   const uint32_t dk = ame_dtype_family_key(data_dtype);
@@ -1908,9 +1993,10 @@ bool ame_host_ldexp(uint32_t data_dtype, uint32_t exp_dtype, uint32_t nelem,
         store_f32(fd.data() + i * 4,
                   raw_to_f32(uint64_t(load_int_at(dest, i, dd.size_bits, false)), dk));
     }
-    if (!ame_host_ldexp(0x20300120u | (uint32_t(dd.fp_rm & 0xf) << 22) | 0x00300000u, exp_dtype,
+    // Keep the pre-existing narrow-format path outside this FP32 diagnosis.
+    if (!ame_host_ldexp_impl(0x20300120u | (uint32_t(dd.fp_rm & 0xf) << 22) | 0x00300000u, exp_dtype,
                         nelem, fa.data(), expn, fd.data(),
-                        accumulate, negate_exp, fflags, xsat))
+                        accumulate, negate_exp, fflags, xsat, false))
       return false;
     // f32->narrow store-back rounding must accrue to amefflags too.
     if (fflags)
@@ -1924,12 +2010,19 @@ bool ame_host_ldexp(uint32_t data_dtype, uint32_t exp_dtype, uint32_t nelem,
       softfloat_exceptionFlags = 0;
       const float32_t av = load_f32(data + i * 4);
       int64_t exp = load_int_at(expn, i, de.size_bits, de.is_signed);
+      if (exact_fp32)
+        exp = std::max<int64_t>(-512, std::min<int64_t>(512, exp));
       if (negate_exp)
         exp = -exp;
-      float32_t dv = f32_scale_pow2(av, exp);
-      dv = f32_host_overflow_fixup(dv, (av.v & 0x7fffffffu) < 0x7f800000u);
-      if (accumulate)
-        dv = f32_add(load_f32(dest + i * 4), dv);
+      float32_t dv;
+      if (exact_fp32)
+        dv = f32_scale_add_pow2(av, exp, load_f32(dest + i * 4), accumulate);
+      else {
+        dv = f32_scale_pow2(av, exp);
+        dv = f32_host_overflow_fixup(dv, (av.v & 0x7fffffffu) < 0x7f800000u);
+        if (accumulate)
+          dv = f32_add(load_f32(dest + i * 4), dv);
+      }
       if (isNaNF32UI(dv.v))
         dv = float32_t{defaultNaNF32UI};
       dv.v = saturate_inf_raw(dv.v, 0x20300120u, dd.has_inf);
@@ -1964,6 +2057,13 @@ bool ame_host_ldexp(uint32_t data_dtype, uint32_t exp_dtype, uint32_t nelem,
   if (xsat && sat && dd.saturate)
     *xsat |= 1;
   return true;
+}
+
+bool ame_host_ldexp(uint32_t data_dtype, uint32_t exp_dtype, uint32_t nelem,
+                    const uint8_t* data, const uint8_t* expn, uint8_t* dest,
+                    bool accumulate, bool negate_exp, uint8_t* fflags, uint8_t* xsat) {
+  return ame_host_ldexp_impl(data_dtype, exp_dtype, nelem, data, expn, dest,
+                            accumulate, negate_exp, fflags, xsat, true);
 }
 
 bool ame_host_ldexp_x(uint32_t data_dtype, uint32_t nelem, const uint8_t* data,
@@ -2011,7 +2111,10 @@ bool ame_host_log2bias(uint32_t dtype, uint32_t nelem,
   softfloat_roundingMode = ame_fp_rm_to_softfloat(dt.fp_rm);
   for (uint32_t i = 0; i < nelem; i++) {
     softfloat_exceptionFlags = 0;
-    const float32_t av = f32_canonical_abs(load_f32(a + i * 4));
+    const float32_t input = load_f32(a + i * 4);
+    if (softfloat_isSigNaNF32UI(input.v))
+      softfloat_exceptionFlags |= softfloat_flag_invalid;
+    const float32_t av = f32_canonical_abs(input);
     float32_t lv;
     if (isNaNF32UI(av.v)) {
       lv = float32_t{defaultNaNF32UI};
@@ -2172,13 +2275,17 @@ bool ame_host_ew_sel(bool lt, bool cmov, uint32_t pred_dtype, uint32_t data_dtyp
 
   for (uint32_t i = 0; i < nelem; i++) {
     // Spec cmov/sel: numeric compare of Md[ms1] against zero, not the MSB.
-    // Unsigned integers are never < 0; FP uses the predicate datatype's order.
+    // The comparison is ordered, matching ame_host_ew_cmp: a NaN element makes
+    // both directions false and -0 compares equal to +0.  Unsigned integers are
+    // never < 0; FP uses the predicate datatype's order.
     bool neg = false;
+    bool nonneg = true;
     if (is_fp_family(pk)) {
       const float32_t av =
           raw_to_f32(uint64_t(load_int_at(pred, i, dp.size_bits, false)), pk);
       const float32_t z = i32_to_f32(0);
       neg = f32_lt_quiet(av, z);
+      nonneg = f32_le_quiet(z, av);
     } else if (dp.is_signed) {
       if (dp.size_bits == 128) {
         // load_int_at truncates to 64 bits; the sign of a 128-bit
@@ -2187,8 +2294,9 @@ bool ame_host_ew_sel(bool lt, bool cmov, uint32_t pred_dtype, uint32_t data_dtyp
       } else {
         neg = load_int_at(pred, i, dp.size_bits, true) < 0;
       }
+      nonneg = !neg;
     }
-    const bool take = lt ? neg : !neg;
+    const bool take = lt ? neg : nonneg;
     if (take) {
       ame_copy_elem(dest, i, src, i, dd.size_bits);
     } else if (!cmov) {
@@ -2381,10 +2489,11 @@ bool ame_host_convert_elem(uint32_t src_dtype, const uint8_t* src,
   bool sat = false;
 
   if (sint && dint) {
-    const __int128 v = sd.is_signed ? load_swide_at(src, 0, sd.size_bits)
-                                    : __int128(load_uwide_at(src, 0, sd.size_bits));
-    const __int128 c = clamp_wide128(v, td.size_bits, td.is_signed, td.saturate, &sat);
-    store_uwide_at(dst, 0, td.size_bits, static_cast<unsigned __int128>(c));
+    const u128 raw = load_uwide_at(src, 0, sd.size_bits);
+    const bool neg = sd.is_signed && raw_is_negative(raw, sd.size_bits);
+    const u128 mag = neg ? raw_magnitude(raw, sd.size_bits) : raw;
+    const u128 c = convert_int_magnitude(neg, u256w{0, mag}, td, sat);
+    store_uwide_at(dst, 0, td.size_bits, c);
     if (xsat && sat && td.saturate)
       *xsat |= 1;
     return true;
@@ -2470,6 +2579,9 @@ bool ame_convert_scalar(uint32_t scalar_dtype, uint64_t xval, uint32_t xlen,
   // Spec 6.2.4: low sizeof(scalar_dtype) bits when that fits in XLEN; otherwise
   // zero-extend the X-register pattern (including Int/Uint128).
   unsigned __int128 bits = xval;
+  // RV32 host register storage may contain sign-extension above XLEN.
+  if (xlen < 64)
+    bits &= ((unsigned __int128)(1) << xlen) - 1;
   if (sd.size_bits < xlen && sd.size_bits < 128)
     bits &= ((unsigned __int128)(1) << sd.size_bits) - 1;
 
@@ -2490,31 +2602,28 @@ uint8_t* elem_ptr(uint8_t* base, uint32_t n, uint32_t eb,
   return base + (i * n + j) * eb;
 }
 
-// Spec 6.2.2: the mathematical expression is evaluated without intermediate
-// truncation and converted once to the destination. The running accumulator
-// therefore stays exact here; the caller clamps only the value it stores.
+// A fold feeds the destination-domain result of each step into the next one.
+// Keep raw patterns for comparisons and sign/magnitude for an exact addition.
 bool fold_step_int(ame_fold_op_t op, const ame_dtype_t& dt,
-                   __int128& acc, __int128 v) {
+                   u128& acc, u128 v, bool& sat) {
+  const u128 bias = dt.is_signed ? u128(1) << (dt.size_bits - 1) : 0;
   switch (op) {
-    case ame_fold_op_t::ADD: acc = acc + v; return true;
+    case ame_fold_op_t::ADD: {
+      const bool aneg = dt.is_signed && raw_is_negative(acc, dt.size_bits);
+      const bool vneg = dt.is_signed && raw_is_negative(v, dt.size_bits);
+      const u256w am{0, aneg ? raw_magnitude(acc, dt.size_bits) : acc};
+      const u256w vm{0, vneg ? raw_magnitude(v, dt.size_bits) : v};
+      bool neg;
+      u256w mag;
+      add_mag256(aneg, am, vneg, vm, neg, mag);
+      acc = convert_int_magnitude(neg, mag, dt, sat);
+      return true;
+    }
     case ame_fold_op_t::MIN:
-      if (!dt.is_signed) {
-        // Exact unsigned chain: MIN/MAX keep both sides in [0, 2^b).
-        const unsigned __int128 ua = static_cast<unsigned __int128>(acc);
-        const unsigned __int128 uv = static_cast<unsigned __int128>(v);
-        acc = (__int128)(ua < uv ? ua : uv);
-      } else {
-        acc = acc < v ? acc : v;
-      }
+      acc = (acc ^ bias) < (v ^ bias) ? acc : v;
       return true;
     case ame_fold_op_t::MAX:
-      if (!dt.is_signed) {
-        const unsigned __int128 ua = static_cast<unsigned __int128>(acc);
-        const unsigned __int128 uv = static_cast<unsigned __int128>(v);
-        acc = (__int128)(ua > uv ? ua : uv);
-      } else {
-        acc = acc > v ? acc : v;
-      }
+      acc = (acc ^ bias) > (v ^ bias) ? acc : v;
       return true;
     default: return false;
   }
@@ -2588,25 +2697,18 @@ bool ame_host_reduce(ame_fold_op_t op, bool along_row, uint32_t dtype, uint32_t 
   for (uint32_t outer = 0; outer < n; outer++) {
     const uint32_t first = along_row ? square_index(n, outer, 0)
                                      : square_index(n, 0, outer);
-    const __int128 firstv = dt.is_signed
-        ? load_swide_at(src, first, dt.size_bits)
-        : __int128(load_uwide_at(src, first, dt.size_bits));
-    __int128 acc = firstv;
+    u128 acc = load_uwide_at(src, first, dt.size_bits);
     for (uint32_t k = 1; k < n; k++) {
       const uint32_t ix = along_row ? square_index(n, outer, k)
                                     : square_index(n, k, outer);
-      const __int128 v = dt.is_signed
-          ? load_swide_at(src, ix, dt.size_bits)
-          : __int128(load_uwide_at(src, ix, dt.size_bits));
-      if (!fold_step_int(op, dt, acc, v))
+      const u128 v = load_uwide_at(src, ix, dt.size_bits);
+      if (!fold_step_int(op, dt, acc, v, sat))
         return false;
     }
     for (uint32_t inner = 0; inner < n; inner++) {
       const uint32_t ix = along_row ? square_index(n, outer, inner)
                                     : square_index(n, inner, outer);
-      const __int128 dv = clamp_wide128(acc, dt.size_bits, dt.is_signed,
-                                        dt.saturate, &sat);
-      store_uwide_at(dst, ix, dt.size_bits, (unsigned __int128)(dv));
+      store_uwide_at(dst, ix, dt.size_bits, acc);
     }
   }
   if (xsat && sat && dt.saturate)
@@ -2666,25 +2768,18 @@ bool ame_host_prefix(ame_fold_op_t op, bool along_row, uint32_t dtype, uint32_t 
   for (uint32_t outer = 0; outer < n; outer++) {
     const uint32_t first = along_row ? square_index(n, outer, 0)
                                      : square_index(n, 0, outer);
-    const __int128 firstv = dt.is_signed
-        ? load_swide_at(src, first, dt.size_bits)
-        : __int128(load_uwide_at(src, first, dt.size_bits));
-    __int128 acc = firstv;
+    u128 acc = load_uwide_at(src, first, dt.size_bits);
     for (uint32_t k = 0; k < n; k++) {
       if (k > 0) {
         const uint32_t ix = along_row ? square_index(n, outer, k)
                                       : square_index(n, k, outer);
-        const __int128 v = dt.is_signed
-            ? load_swide_at(src, ix, dt.size_bits)
-            : __int128(load_uwide_at(src, ix, dt.size_bits));
-        if (!fold_step_int(op, dt, acc, v))
+        const u128 v = load_uwide_at(src, ix, dt.size_bits);
+        if (!fold_step_int(op, dt, acc, v, sat))
           return false;
       }
       const uint32_t ix = along_row ? square_index(n, outer, k)
                                     : square_index(n, k, outer);
-      const __int128 dv = clamp_wide128(acc, dt.size_bits, dt.is_signed,
-                                        dt.saturate, &sat);
-      store_uwide_at(dst, ix, dt.size_bits, (unsigned __int128)(dv));
+      store_uwide_at(dst, ix, dt.size_bits, acc);
     }
   }
   if (xsat && sat && dt.saturate)

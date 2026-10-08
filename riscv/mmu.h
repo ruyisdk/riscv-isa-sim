@@ -18,6 +18,7 @@
 #include <cassert>
 #include <cstddef>
 #include <stdlib.h>
+#include <vector>
 
 // virtual memory configuration
 #define PGSHIFT 12
@@ -165,6 +166,15 @@ public:
   void guest_store(reg_t addr, T val) {
     store(addr, val, {.forced_virt=true});
   }
+
+  struct ram_store_span {
+    reg_t addr;
+    const uint8_t* data;
+    size_t len;
+  };
+
+  // Experimental AME transaction: RAM only, no device callbacks.
+  void store_ram_spans(const std::vector<ram_store_span>& spans);
 
   // shadow stack store
   template<typename T>
