@@ -1348,17 +1348,22 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
         case ame_ew_op_t::SQRT: dv = f64_sqrt(av); break;
         case ame_ew_op_t::REC: dv = f64_div(f64_one, av); break;
         case ame_ew_op_t::RSQRT: dv = f64_div(f64_one, f64_sqrt(av)); break;
+        // Spec 6.2.3 :252 ("Exact operations and exact conversions set none of
+        // these flags") plus the mfrint* pages ("a representable integral
+        // result is exact", instructions.adoc:1481/1516/1551/1586): removing
+        // the input fraction is the operation itself, so it never sets NX.
+        // exact=false keeps SoftFloat from signalling that rounding.
         case ame_ew_op_t::FRINTM:
-          dv = f64_roundToInt(av, softfloat_round_min, true);
+          dv = f64_roundToInt(av, softfloat_round_min, false);
           break;
         case ame_ew_op_t::FRINTN:
-          dv = f64_roundToInt(av, softfloat_round_near_even, true);
+          dv = f64_roundToInt(av, softfloat_round_near_even, false);
           break;
         case ame_ew_op_t::FRINTP:
-          dv = f64_roundToInt(av, softfloat_round_max, true);
+          dv = f64_roundToInt(av, softfloat_round_max, false);
           break;
         case ame_ew_op_t::FRINTZ:
-          dv = f64_roundToInt(av, softfloat_round_minMag, true);
+          dv = f64_roundToInt(av, softfloat_round_minMag, false);
           break;
         case ame_ew_op_t::COS:
         case ame_ew_op_t::SIN:
@@ -1560,17 +1565,19 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
           dv = f32_div(float32_t{0x3f800000u}, s);
           break;
         }
+        // Same as the FP64 FRINT* group above: the instruction's own rounding
+        // to an integral value never sets NX (spec 6.2.3 :252).
         case ame_ew_op_t::FRINTM:
-          dv = f32_roundToInt(av, softfloat_round_min, true);
+          dv = f32_roundToInt(av, softfloat_round_min, false);
           break;
         case ame_ew_op_t::FRINTN:
-          dv = f32_roundToInt(av, softfloat_round_near_even, true);
+          dv = f32_roundToInt(av, softfloat_round_near_even, false);
           break;
         case ame_ew_op_t::FRINTP:
-          dv = f32_roundToInt(av, softfloat_round_max, true);
+          dv = f32_roundToInt(av, softfloat_round_max, false);
           break;
         case ame_ew_op_t::FRINTZ:
-          dv = f32_roundToInt(av, softfloat_round_minMag, true);
+          dv = f32_roundToInt(av, softfloat_round_minMag, false);
           break;
         case ame_ew_op_t::COS:
         case ame_ew_op_t::SIN:
