@@ -1403,6 +1403,13 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
           else if (op == ame_ew_op_t::EXP2) ho = std::exp2(hd);
           else ho = std::log2(hd);
           std::memcpy(&dv.v, &ho, 8);
+          // Spec 6.2.3 :248-250: NX covers "an implementation-defined
+          // approximation that is not exact".  cos/sin are exact only at +-0;
+          // tanh is also exact at +-inf (tanh(+-inf) = +-1).
+          if ((op == ame_ew_op_t::COS || op == ame_ew_op_t::SIN ||
+               op == ame_ew_op_t::TANH) &&
+              !zero && !(op == ame_ew_op_t::TANH && inf))
+            softfloat_exceptionFlags |= softfloat_flag_inexact;
           if (op == ame_ew_op_t::EXP2 && !inf &&
               (dv.v & 0x7fffffffffffffffull) == 0x7ff0000000000000ull &&
               (dv.v & 0x000fffffffffffffull) == 0) {
@@ -1619,6 +1626,13 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
           else if (op == ame_ew_op_t::EXP2) ho = std::exp2(hf);
           else ho = std::log2(hf);
           std::memcpy(&dv.v, &ho, 4);
+          // Spec 6.2.3 :248-250: NX covers "an implementation-defined
+          // approximation that is not exact".  cos/sin are exact only at +-0;
+          // tanh is also exact at +-inf (tanh(+-inf) = +-1).
+          if ((op == ame_ew_op_t::COS || op == ame_ew_op_t::SIN ||
+               op == ame_ew_op_t::TANH) &&
+              !zero && !(op == ame_ew_op_t::TANH && inf))
+            softfloat_exceptionFlags |= softfloat_flag_inexact;
           if (op == ame_ew_op_t::EXP2)
             dv = f32_host_overflow_fixup(dv, !inf);
           if (isNaNF32UI(dv.v))
