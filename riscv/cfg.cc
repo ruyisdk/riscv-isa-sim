@@ -51,6 +51,7 @@ cfg_t::cfg_t()
   ame_udsz         = 32;
   ame_mregs        = 32;
   ame_accregs      = 4;
+  ame_e5m2_nan_ieee = false;
 }
 
 void start_pc_t::set_global(reg_t pc)

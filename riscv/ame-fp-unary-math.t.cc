@@ -210,10 +210,39 @@ static void test_e5m2_signaling_nan_flags() {
   uint8_t d[1] = {0x3c};
   uint8_t ff = 0, xs = 0;
 
+  // Default (QEMU-aligned): OCP OFP8 Rev 1.0 §5.1 does not interpret the three
+  // E5M2 NaN mantissa encodings, so the model treats every one of them as quiet
+  // and raises no NV.  The result is the canonical quiet NaN either way.
+  expect(!ame_e5m2_nan_ieee(), "e5m2 NaN interpretation defaults to QEMU-aligned");
   expect(ame_host_ew(ame_ew_op_t::MULADD, e5m2, 1, a, b, d, &ff, &xs),
          "e5m2 madd signaling NaN");
-  expect(d[0] == 0x7f, "e5m2 signaling NaN result");
+  // Spec 6.2.3 :222-224: a quieted NaN input produces the destination
+  // datatype's canonical quiet NaN.  E5M2 canonical qNaN is S.11111.10 = 0x7E
+  // (0x7F is the non-canonical payload S.11111.11).
+  expect(d[0] == 0x7e, "e5m2 signaling NaN result");
+  expect(ff == 0x00, "e5m2 quiet NaN encoding raises no NV");
+
+  // IEEE reading: fraction 01 is the signaling encoding (quiet bit clear), so
+  // NV is raised and the delivered result is still 0x7E.
+  ame_set_e5m2_nan_ieee(true);
+  ff = 0;
+  d[0] = 0x3c;
+  expect(ame_host_ew(ame_ew_op_t::MULADD, e5m2, 1, a, b, d, &ff, &xs),
+         "e5m2 madd signaling NaN (IEEE reading)");
+  expect(d[0] == 0x7e, "e5m2 signaling NaN result (IEEE reading)");
   expect(ff == 0x10, "e5m2 signaling NaN invalid flag");
+
+  // The knob is E5M2-only: an E4M3 NaN still carries no NV under it.
+  const uint32_t e4m3 = 0x10100108;
+  const uint8_t e4_nan[1] = {0x7f};
+  ff = 0;
+  d[0] = 0x3c;
+  expect(ame_host_ew(ame_ew_op_t::MULADD, e4m3, 1, e4_nan, b, d, &ff, &xs),
+         "e4m3 madd NaN under the IEEE E5M2 reading");
+  expect(d[0] == 0x7f, "e4m3 NaN result");
+  expect(ff == 0x00, "e4m3 NaN raises no NV");
+
+  ame_set_e5m2_nan_ieee(false);
 }
 
 // Manual pole case: 1/(±0) and 1/sqrt(±0) saturate to the same-sign max

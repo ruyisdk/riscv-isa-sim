@@ -10,6 +10,16 @@
 #include <algorithm>
 #include <vector>
 
+// The E5M2 NaN interpretation lives in softfloat, because that is where the
+// signaling-NaN test runs (specialize.h, reached from e5m2_to_f16/e5m2_to_bf16).
+void ame_set_e5m2_nan_ieee(bool ieee) {
+  softfloat_e5m2NanIeee = ieee ? 1 : 0;
+}
+
+bool ame_e5m2_nan_ieee() {
+  return softfloat_e5m2NanIeee != 0;
+}
+
 namespace {
 
 // Defined with the FP helpers further below; used by matmul/ew/ldexp before

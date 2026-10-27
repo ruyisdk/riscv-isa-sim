@@ -192,4 +192,14 @@ void ame_host_mmove_store(uint32_t n, uint32_t udsz_bits, uint32_t elem_bits,
 uint64_t ame_host_mmove_load(uint32_t n, uint32_t udsz_bits, uint32_t elem_bits,
                              const uint8_t* mreg, uint32_t pos);
 
+// Select how E5M2's NaN mantissa encodings are interpreted.  OCP OFP8 Rev 1.0
+// §5.1 defines none of the three, so the AME model exposes the choice:
+//   false (default) -- QEMU-aligned: every E5M2 NaN is quiet, so no NV.
+//   true           -- IEEE 754 quiet bit: frac[1] clear (0x7D, 0xFD) is a
+//                     signaling NaN and raises NV.
+// Either way the delivered result is the canonical quiet NaN (0x7E), and no
+// other datatype is affected.  Set from --ztt-e5m2-nan-ieee.
+void ame_set_e5m2_nan_ieee(bool ieee);
+bool ame_e5m2_nan_ieee();
+
 #endif

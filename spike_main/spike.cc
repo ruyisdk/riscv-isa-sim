@@ -47,6 +47,9 @@ static void help(int exit_code = 1)
   fprintf(stderr, "  --ame-udsz=<n>        AME unit datatype size in bits [default 32]\n");
   fprintf(stderr, "  --ame-mregs=<n>       Number of AME M registers (16 or 32) [default 32]\n");
   fprintf(stderr, "  --ame-accregs=<n>     Number of AME Acc registers (1, 2, 4, 8, or 16) [default 4]\n");
+  fprintf(stderr, "  --ztt-e5m2-nan-ieee   Read E5M2's quiet bit per IEEE 754, so fraction 01 (0x7D/0xFD) is a\n");
+  fprintf(stderr, "                          signaling NaN and raises NV.  Off by default: every E5M2 NaN is\n");
+  fprintf(stderr, "                          quiet, which matches QEMU; the result is 0x7E either way\n");
   fprintf(stderr, "  --pmpregions=<n>      Number of PMP regions [default 16]\n");
   fprintf(stderr, "  --pmpgranularity=<n>  PMP Granularity in bytes [default 4]\n");
   fprintf(stderr, "  --priv=<m|mu|msu>     RISC-V privilege modes supported [default %s]\n", DEFAULT_PRIV);
@@ -421,6 +424,7 @@ int main(int argc, char** argv)
   parser.option(0, "ame-udsz", 1, [&](const char* s){cfg.ame_udsz = atoul_safe(s);});
   parser.option(0, "ame-mregs", 1, [&](const char* s){cfg.ame_mregs = atoul_safe(s);});
   parser.option(0, "ame-accregs", 1, [&](const char* s){cfg.ame_accregs = atoul_safe(s);});
+  parser.option(0, "ztt-e5m2-nan-ieee", 0, [&](const char UNUSED *s){cfg.ame_e5m2_nan_ieee = true;});
   parser.option(0, "pmpregions", 1, [&](const char* s){cfg.pmpregions = atoul_safe(s);});
   parser.option(0, "pmpgranularity", 1, [&](const char* s){cfg.pmpgranularity = atoul_safe(s);});
   parser.option(0, "priv", 1, [&](const char* s){cfg.priv = s;});

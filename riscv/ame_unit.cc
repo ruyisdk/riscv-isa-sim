@@ -468,6 +468,10 @@ void ame_unit_t::reset() {
   amexsat = 0;
   amestatus = 0;
 
+  // E5M2's NaN interpretation is a model-wide static choice rather than
+  // per-instruction state, so it is installed here from the configuration.
+  ame_set_e5m2_nan_ieee(cfg.ame_e5m2_nan_ieee);
+
   allocate_storage();
 
   auto state = p->get_state();

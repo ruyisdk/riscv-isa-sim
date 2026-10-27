@@ -131,6 +131,9 @@ struct commonNaN { char _unused; };
 /*----------------------------------------------------------------------------
 | Returns true when 8-bit E5M2 `uiA' is a signaling NaN.  E5M2 uses fraction
 | bit 1 as the quiet bit, so fraction 01 is the only signaling NaN encoding.
+| Whether that encoding is signaling at all is implementation-defined (OCP
+| OFP8 Rev 1.0 §5.1), so the invalid exception below consults the AME model's
+| `softfloat_e5m2NanIeee' selection; this predicate describes the IEEE reading.
 | Note:  This macro evaluates its argument more than once.
 *----------------------------------------------------------------------------*/
 #define softfloat_isSigNaNE5M2UI( uiA ) ((((uiA) & 0x7C) == 0x7C) && (((uiA) & 0x03) == 0x01))
@@ -138,13 +141,15 @@ struct commonNaN { char _unused; };
 /*----------------------------------------------------------------------------
 | Assuming `uiA' has the bit pattern of a 8-bit floating-point NaN, converts
 | this NaN to the common NaN form, and stores the resulting common NaN at the
-| location pointed to by `zPtr'.
+| location pointed to by `zPtr'.  The invalid exception is raised only when the
+| model interprets the quiet bit of E5M2 per IEEE 754; the quiet (default)
+| reading treats every E5M2 NaN as non-signaling, which is what QEMU does.
 *----------------------------------------------------------------------------*/
 #define softfloat_E4M3UIToCommonNaN( uiA, zPtr ) (void) (uiA), (void) (zPtr)
 #define softfloat_E5M2UIToCommonNaN( uiA, zPtr ) \
     do { \
         (void) (zPtr); \
-        if ( softfloat_isSigNaNE5M2UI( uiA ) ) \
+        if ( softfloat_e5m2NanIeee && softfloat_isSigNaNE5M2UI( uiA ) ) \
             softfloat_raiseFlags( softfloat_flag_invalid ); \
     } while ( 0 )
 

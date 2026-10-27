@@ -100,6 +100,11 @@ public:
   reg_t                   ame_udsz;
   reg_t                   ame_mregs;
   reg_t                   ame_accregs;
+  // Whether E5M2's quiet bit is interpreted per IEEE 754, which makes fraction
+  // 01 (0x7D / 0xFD) a signaling NaN.  OCP OFP8 Rev 1.0 §5.1 leaves this
+  // implementation-defined; the default (false) treats every E5M2 NaN as quiet
+  // and matches QEMU.  --ztt-e5m2-nan-ieee turns it on.
+  bool                    ame_e5m2_nan_ieee;
 
   size_t nprocs() const { return hartids.size(); }
   size_t max_hartid() const { return hartids.back(); }

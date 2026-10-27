@@ -96,6 +96,18 @@ enum {
 };
 
 /*----------------------------------------------------------------------------
+| Interpretation of the three E5M2 NaN mantissa encodings.  OCP OFP8 Rev 1.0
+| §5.1 gives the encodings but states that "Interpretation of the three
+| mantissa values for NaNs is not defined", so the AME model selects one:
+|   0 (default) -- QEMU-aligned: every E5M2 NaN is quiet, so no NV is raised.
+|   1           -- IEEE 754 quiet-bit convention: frac[1] clear is a signaling
+|                  NaN and raises NV.
+| The flag only selects the exception; the NaN that is delivered is the
+| canonical quiet NaN either way, and no other format consults it.
+*----------------------------------------------------------------------------*/
+extern THREAD_LOCAL uint_fast8_t softfloat_e5m2NanIeee;
+
+/*----------------------------------------------------------------------------
 | Routine to raise any or all of the software floating-point exception flags.
 *----------------------------------------------------------------------------*/
 void softfloat_raiseFlags( uint_fast8_t );
