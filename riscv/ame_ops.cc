@@ -2165,10 +2165,10 @@ bool ame_host_ew_cmp(bool lt, uint32_t src_dtype, uint32_t dst_dtype, uint32_t n
       softfloat_exceptionFlags = 0;
       const float32_t av = raw_to_f32(uint64_t(load_int_at(a, i, ds.size_bits, false)), sk);
       const float32_t bv = raw_to_f32(uint64_t(load_int_at(b, i, ds.size_bits, false)), sk);
-      // A comparison with any NaN input is invalid (quiet or signaling);
-      // the quiet-compare primitives only raise NV for signaling NaNs.
-      if (isNaNF32UI(av.v) || isNaNF32UI(bv.v))
-        softfloat_exceptionFlags |= softfloat_flag_invalid;
+      // Spec 6.2.3 :237-240: NV is set for a signaling NaN, but "Propagating a
+      // quiet NaN alone does not set NV"; the ordered comparison is false for
+      // any NaN operand.  The _quiet primitives already raise invalid for a
+      // signaling NaN input and nothing for a quiet one, so no blanket NV here.
       const bool pass = lt ? f32_lt_quiet(av, bv) : f32_le_quiet(bv, av);
       local_ff |= softfloat_to_ame_fflags(softfloat_exceptionFlags);
       store_uwide_at(d, i, dd.size_bits, pass ? ones : 0);
