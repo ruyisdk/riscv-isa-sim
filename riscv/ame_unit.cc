@@ -928,6 +928,12 @@ void ame_unit_t::ew_unop(ame_ew_op_t op, reg_t md, reg_t ms1) {
     return;
   }
 
+  // An integer source of exp2/log2 needs no explicit rejection here: the host
+  // float kernels (ame_ops.cc) report the tuple as not applicable, and the
+  // failure path below turns that into amestatus.UN as spec 6.1.3 (:56-62)
+  // requires.  Spelling the check out for only those two ops would suggest the
+  // rest of the family is not covered the same way.
+
   const uint32_t n_sq = n_sq_max(this, dd, da);
   if (!m_span_legal(md, n_sq, dd) || !m_span_legal(ms1, n_sq, da))
     throw trap_illegal_instruction(0);
@@ -1067,8 +1073,19 @@ void ame_unit_t::ew_log2bias(reg_t md, reg_t ms1, reg_t ms2, bool bias_minus_log
   std::vector<uint8_t> a_buf, b_buf, out;
   read_squares(this, ms1, da, n_sq, a_buf);
   read_squares(this, ms2, db, n_sq, b_buf);
-  out.assign(packed_nbytes(dd, nelem), 0);
   uint8_t ff = 0;
+  if (int_bias) {
+    // Convert the bias with the destination tuple's rounding mode, so an
+    // inexact integer-to-float conversion accrues its flags like any other
+    // conversion of this tuple.
+    std::vector<uint8_t> b_conv(packed_nbytes(dd, nelem), 0);
+    if (!ame_host_convert(db, dd, nelem, b_buf.data(), b_conv.data(), &ff, nullptr)) {
+      set_unsupported();
+      return;
+    }
+    b_buf.swap(b_conv);
+  }
+  out.assign(packed_nbytes(dd, nelem), 0);
   if (!ame_host_log2bias(dd, nelem, a_buf.data(), b_buf.data(), out.data(),
                          bias_minus_log, &ff)) {
     set_unsupported();
