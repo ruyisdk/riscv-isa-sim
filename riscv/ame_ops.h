@@ -111,18 +111,6 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
                  const uint8_t* a, const uint8_t* b, uint8_t* d,
                  uint8_t* fflags, uint8_t* xsat);
 
-// Integer log2-bias (mlog2sub/msublog2 and X forms on integer dtypes):
-// per element, lv = floor(log2(|log_elem|)), result = bias_minus_log
-// ? bias - lv : lv - bias, converted per the destination datatype.
-bool ame_host_log2bias_int(const ame_dtype_t& dl, const ame_dtype_t& dbias,
-                           const ame_dtype_t& dd, uint32_t nelem,
-                           const uint8_t* log_buf, const uint8_t* bias_buf,
-                           uint8_t* dest, bool bias_minus_log, bool* xsat);
-bool ame_host_log2bias_int_x(const ame_dtype_t& dl, const ame_dtype_t& dd,
-                             uint32_t nelem, const uint8_t* log_buf,
-                             const uint8_t* scalar_elem, uint8_t* dest,
-                             bool bias_minus_log, bool* xsat);
-
 // Compare: dest is integer all-ones / zeros. lt=false → A>=B; lt=true → A<B.
 bool ame_host_ew_cmp(bool lt, uint32_t src_dtype, uint32_t dst_dtype, uint32_t nelem,
                      const uint8_t* a, const uint8_t* b, uint8_t* d, uint8_t* fflags);

@@ -1014,29 +1014,6 @@ u128 ew_int128_signed(ame_ew_op_t op, const ame_dtype_t& dt, u128 ua, u128 ub,
       add_mag256(sga, u256w{0, ma}, !sgb, u256w{0, mb}, neg, m);
       return fit_int128(false, m, dt.saturate, sat); // |a-b| >= 0
     }
-    case ame_ew_op_t::EXP2: {
-      // Integer 2^lhs; negative lhs gives 0 (spec).  2^mag is
-      // representable iff mag < 127; otherwise a saturating destination
-      // clamps to INTMAX and a non-saturating one wraps (mag == 127 keeps
-      // the 2^127 bit pattern, which re-enters as INT128_MIN; mag >= 128
-      // wraps to 0).
-      if (sga) { sat = false; return 0; }
-      const u128 mag = ua;
-      if (mag <= 126) { sat = false; return (u128)1 << mag; }
-      if (dt.saturate) { sat = true; return ((u128)1 << 127) - 1; }
-      sat = false;
-      return mag == 127 ? ((u128)1 << 127) : 0;
-    }
-    case ame_ew_op_t::LOG2: {
-      // floor(log2(|lhs|)); 0 yields 0 (the magnitude scan's identity).
-      const u128 mag = sga ? (u128)0 - ua : ua;
-      int fl = 0;
-      for (int b = 0; b < 128; b++)
-        if (mag >= ((u128)1 << b))
-          fl = b;
-      sat = false;
-      return (u128)fl;
-    }
     case ame_ew_op_t::ADD:
     case ame_ew_op_t::SUB: {
       // ADD: a+b; SUB: b-a == b + (-a)
@@ -1113,25 +1090,6 @@ u128 ew_int128_unsigned(ame_ew_op_t op, const ame_dtype_t& dt, u128 ua, u128 ub,
       return ua;
     case ame_ew_op_t::ABSDIFF:
       return ua > ub ? ua - ub : ub - ua;
-    case ame_ew_op_t::EXP2: {
-      // Integer 2^lhs.  2^mag is representable iff mag < 128; otherwise a
-      // saturating destination clamps to all-ones and a non-saturating one
-      // wraps to 0 (2^mag has a single higher bit).
-      const u128 mag = ua;
-      if (mag <= 127) { sat = false; return (u128)1 << mag; }
-      if (dt.saturate) { sat = true; return ~(u128)0; }
-      sat = false;
-      return 0;
-    }
-    case ame_ew_op_t::LOG2: {
-      // floor(log2(lhs)); 0 yields 0 (the magnitude scan's identity).
-      int fl = 0;
-      for (int b = 0; b < 128; b++)
-        if (ua >= ((u128)1 << b))
-          fl = b;
-      sat = false;
-      return (u128)fl;
-    }
     case ame_ew_op_t::ADD: {
       const u128 r = ua + ub;
       if (r < ua && dt.saturate) {
@@ -1785,34 +1743,6 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
         case ame_ew_op_t::MULACCNEG: r = __int128(udst - ua * ub); break;
         case ame_ew_op_t::MULADD: r = __int128(ua + ub * udst); break;
         case ame_ew_op_t::MULSUB: r = __int128(ua - ub * udst); break;
-        case ame_ew_op_t::EXP2: {
-          // Integer 2^lhs.  2^mag is representable iff mag < size_bits;
-          // otherwise a saturating destination clamps to the maximum and a
-          // non-saturating one keeps the low size_bits bits (0 once
-          // mag >= size_bits, since 2^mag has a single higher bit).
-          const unsigned __int128 mag = ua;
-          if (mag <= (unsigned __int128)(dt.size_bits - 1)) {
-            r = __int128((unsigned __int128)1 << mag);
-            break;
-          }
-          if (dt.saturate) {
-            sat = true;
-            r = dt.size_bits >= 128 ? __int128(~(unsigned __int128)0)
-                                    : __int128((((unsigned __int128)1 << dt.size_bits) - 1));
-            break;
-          }
-          r = 0;
-          break;
-        }
-        case ame_ew_op_t::LOG2: {
-          // floor(log2(lhs)); 0 yields 0 (the magnitude scan's identity).
-          int fl = 0;
-          for (int b = 0; b < 128; b++)
-            if (ua >= ((unsigned __int128)1 << b))
-              fl = b;
-          r = fl;
-          break;
-        }
         default: have = false; break;
       }
     } else {
@@ -1839,42 +1769,6 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
         case ame_ew_op_t::MULACCNEG: r = destv - av * bv; break;
         case ame_ew_op_t::MULADD: r = av + bv * destv; break;
         case ame_ew_op_t::MULSUB: r = av - bv * destv; break;
-        case ame_ew_op_t::EXP2: {
-          // Integer 2^lhs; negative lhs gives 0 (spec).  2^mag is
-          // representable iff mag < size_bits - 1; otherwise a saturating
-          // destination clamps to INTMAX and a non-saturating one keeps the
-          // low size_bits bits (0 once mag >= size_bits, else the single
-          // bit 2^mag, which may re-enter as a negative pattern).
-          if (av < 0) { r = 0; break; }
-          const unsigned __int128 mag = (unsigned __int128)(av);
-          const unsigned __int128 smax_exp =
-              dt.size_bits >= 128 ? 126 : (unsigned __int128)(dt.size_bits - 2);
-          if (mag <= smax_exp) {
-            r = __int128((unsigned __int128)1 << mag);
-            break;
-          }
-          if (dt.saturate) {
-            sat = true;
-            r = dt.size_bits >= 128
-                ? __int128((((unsigned __int128)1 << 127) - 1))
-                : __int128((((unsigned __int128)1 << (dt.size_bits - 1)) - 1));
-            break;
-          }
-          r = mag >= dt.size_bits ? 0 : __int128((unsigned __int128)1 << mag);
-          break;
-        }
-        case ame_ew_op_t::LOG2: {
-          // floor(log2(|lhs|)); 0 yields 0 (the magnitude scan's identity).
-          const unsigned __int128 mag =
-              av < 0 ? (unsigned __int128)0 - (unsigned __int128)av
-                     : (unsigned __int128)av;
-          int fl = 0;
-          for (int b = 0; b < 128; b++)
-            if (mag >= ((unsigned __int128)1 << b))
-              fl = b;
-          r = fl;
-          break;
-        }
         default: have = false; break;
       }
     }
@@ -2193,74 +2087,6 @@ bool ame_host_ew_cmp(bool lt, uint32_t src_dtype, uint32_t dst_dtype, uint32_t n
     }
     store_uwide_at(d, i, dd.size_bits, pass ? ones : 0);
   }
-  return true;
-}
-
-// floor(log2(|v|)); 0 yields 0 (the magnitude scan's identity), matching
-// the Sail reference ame_int_floor_log2_abs.
-static int int_floor_log2_abs_mag(unsigned __int128 mag) {
-  int fl = 0;
-  for (int b = 0; b < 128; b++)
-    if (mag >= ((unsigned __int128)1 << b))
-      fl = b;
-  return fl;
-}
-
-bool ame_host_log2bias_int(const ame_dtype_t& dl, const ame_dtype_t& dbias,
-                           const ame_dtype_t& dd, uint32_t nelem,
-                           const uint8_t* log_buf, const uint8_t* bias_buf,
-                           uint8_t* dest, bool bias_minus_log, bool* xsat) {
-  if (dl.size_bits == 0 || dbias.size_bits == 0 || dd.size_bits == 0 ||
-      dd.is_fp)
-    return false;
-  bool sat_any = false;
-  for (uint32_t i = 0; i < nelem; i++) {
-    const __int128 av = dl.is_signed ? load_swide_at(log_buf, i, dl.size_bits)
-                                     : (__int128)load_uwide_at(log_buf, i, dl.size_bits);
-    const __int128 bv = dbias.is_signed
-                            ? load_swide_at(bias_buf, i, dbias.size_bits)
-                            : (__int128)load_uwide_at(bias_buf, i, dbias.size_bits);
-    const unsigned __int128 mag =
-        av < 0 ? (unsigned __int128)0 - (unsigned __int128)av
-               : (unsigned __int128)av;
-    const int lv = int_floor_log2_abs_mag(mag);
-    const __int128 r = bias_minus_log ? bv - lv : lv - bv;
-    bool sat = false;
-    const __int128 dv =
-        clamp_wide128(r, dd.size_bits, dd.is_signed, dd.saturate, &sat);
-    sat_any |= sat;
-    store_uwide_at(dest, i, dd.size_bits, (unsigned __int128)dv);
-  }
-  if (xsat)
-    *xsat |= sat_any ? 1 : 0;
-  return true;
-}
-
-bool ame_host_log2bias_int_x(const ame_dtype_t& dl, const ame_dtype_t& dd,
-                             uint32_t nelem, const uint8_t* log_buf,
-                             const uint8_t* scalar_elem, uint8_t* dest,
-                             bool bias_minus_log, bool* xsat) {
-  if (dl.size_bits == 0 || dd.size_bits == 0 || dd.is_fp)
-    return false;
-  bool sat_any = false;
-  for (uint32_t i = 0; i < nelem; i++) {
-    const __int128 av = dl.is_signed ? load_swide_at(log_buf, i, dl.size_bits)
-                                     : (__int128)load_uwide_at(log_buf, i, dl.size_bits);
-    const __int128 bv = dl.is_signed ? load_swide_at(scalar_elem, 0, dl.size_bits)
-                                     : (__int128)load_uwide_at(scalar_elem, 0, dl.size_bits);
-    const unsigned __int128 mag =
-        av < 0 ? (unsigned __int128)0 - (unsigned __int128)av
-               : (unsigned __int128)av;
-    const int lv = int_floor_log2_abs_mag(mag);
-    const __int128 r = bias_minus_log ? bv - lv : lv - bv;
-    bool sat = false;
-    const __int128 dv =
-        clamp_wide128(r, dd.size_bits, dd.is_signed, dd.saturate, &sat);
-    sat_any |= sat;
-    store_uwide_at(dest, i, dd.size_bits, (unsigned __int128)dv);
-  }
-  if (xsat)
-    *xsat |= sat_any ? 1 : 0;
   return true;
 }
 

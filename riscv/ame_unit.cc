@@ -1029,38 +1029,28 @@ void ame_unit_t::ew_log2bias(reg_t md, reg_t ms1, reg_t ms2, bool bias_minus_log
   if (dd == 0 || da == 0 || db == 0 ||
       !ame_dtype_supported_m(dd, ame_udsz) ||
       !ame_dtype_supported_m(da, ame_udsz) ||
-      !ame_dtype_supported_m(db, ame_udsz) ||
-      ame_dtype_family_key(dd) != ame_dtype_family_key(da) ||
-      ame_dtype_family_key(dd) != ame_dtype_family_key(db)) {
+      !ame_dtype_supported_m(db, ame_udsz)) {
     set_unsupported();
     return;
   }
 
-  // Integer log2-bias: D = floor_log2(abs(ms1)) -/+ ms2 per element, with
-  // the destination's saturate/wrap conversion.  Each operand keeps its own
-  // datatype (they share the integer family but may differ in width/sign).
-  if (!ame_parse_dtype(dd).is_fp) {
-    const ame_dtype_t dda = ame_parse_dtype(da);
-    const ame_dtype_t ddb = ame_parse_dtype(db);
-    const ame_dtype_t ddd = ame_parse_dtype(dd);
-    const uint32_t n_sq = n_sq_max(this, dd, da, db);
-    if (!m_span_legal(md, n_sq, dd) || !m_span_legal(ms1, n_sq, da) ||
-        !m_span_legal(ms2, n_sq, db))
-      throw trap_illegal_instruction(0);
-    const uint32_t nelem = n_sq * uint32_t(ame_nelem);
-    std::vector<uint8_t> a_buf, b_buf, out;
-    read_squares(this, ms1, da, n_sq, a_buf);
-    read_squares(this, ms2, db, n_sq, b_buf);
-    out.assign(packed_nbytes(dd, nelem), 0);
-    bool xs = false;
-    if (!ame_host_log2bias_int(dda, ddb, ddd, nelem, a_buf.data(), b_buf.data(),
-                               out.data(), bias_minus_log, &xs)) {
-      set_unsupported();
-      return;
-    }
-    write_squares(this, md, dd, n_sq, out.data());
-    if (xs)
-      amexsat |= 1;
+  // Spec 6.2.2 (instruction_semantics.adoc:182-188): "For the mlog2sub.ew and
+  // msublog2.ew families, including their .ew.x forms, the operand of log2, and
+  // the destination, are standard floating-point datatypes; the bias is
+  // governed by the exact tuple's conversion and subtraction capabilities."
+  // ms1 is the log2 operand here, so an integer ms1 or md is an unsupported
+  // tuple (spec 6.1.3 :56-62: UN set, md unchanged).  The ms2 bias may be a
+  // standard integer square: it is converted to the destination format below,
+  // which is exactly the conversion-and-subtraction capability the tuple has.
+  // A 128-bit integer bias has no standard single conversion to a
+  // floating-point datatype, so that tuple stays unsupported.
+  const ame_dtype_t db_dt = ame_parse_dtype(db);
+  const bool int_bias = ame_is_int_family(db);
+  if (!ame_parse_dtype(da).is_fp || !ame_parse_dtype(dd).is_fp ||
+      ame_dtype_family_key(dd) != ame_dtype_family_key(da) ||
+      (int_bias ? db_dt.size_bits > 64
+                : ame_dtype_family_key(dd) != ame_dtype_family_key(db))) {
+    set_unsupported();
     return;
   }
 
@@ -1095,32 +1085,13 @@ void ame_unit_t::ew_log2bias_x(reg_t md, reg_t xs1_val, reg_t ms2, bool bias_min
     return;
   }
 
-  // Integer log2-bias X-form: the scalar converts into the ms2 datatype,
-  // then D = floor_log2(abs(ms2_elem)) -/+ scalar per element.
-  if (!ame_parse_dtype(dd).is_fp) {
-    const ame_dtype_t ddb = ame_parse_dtype(db);
-    const ame_dtype_t ddd = ame_parse_dtype(dd);
-    const uint32_t n_sq = n_sq_max(this, dd, db);
-    if (!m_span_legal(md, n_sq, dd) || !m_span_legal(ms2, n_sq, db))
-      throw trap_illegal_instruction(0);
-    const uint32_t nelem = n_sq * uint32_t(ame_nelem);
-    std::vector<uint8_t> scalar(16, 0);
-    if (!ame_convert_scalar(amestype, xs1_val, p->get_xlen(), db, scalar.data())) {
-      set_unsupported();
-      return;
-    }
-    std::vector<uint8_t> b_buf, out;
-    read_squares(this, ms2, db, n_sq, b_buf);
-    out.assign(packed_nbytes(dd, nelem), 0);
-    bool xs = false;
-    if (!ame_host_log2bias_int_x(ddb, ddd, nelem, b_buf.data(), scalar.data(),
-                                 out.data(), bias_minus_log, &xs)) {
-      set_unsupported();
-      return;
-    }
-    write_squares(this, md, dd, n_sq, out.data());
-    if (xs)
-      amexsat |= 1;
+  // Spec 6.2.2 (instruction_semantics.adoc:181-187): the .ew.x forms follow
+  // mlog2sub/msublog2, so ms2 is the log2 operand and must be a standard
+  // floating-point datatype, as must the destination.  The X-register bias may
+  // be integer through the amestype conversion; only an integer ms2/md is an
+  // unsupported tuple (spec 6.1.3 :56-62: UN set, md unchanged).
+  if (!ame_parse_dtype(db).is_fp || !ame_parse_dtype(dd).is_fp) {
+    set_unsupported();
     return;
   }
 
