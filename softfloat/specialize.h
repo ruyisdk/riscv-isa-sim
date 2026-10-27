@@ -95,9 +95,14 @@ struct commonNaN { char _unused; };
 
 /*----------------------------------------------------------------------------
 | The bit pattern for a default generated 8-bit floating-point NaN.
+| Ztt v0.6 section 6.2.3 (instruction_semantics.adoc:222-224) makes every NaN
+| result "the destination datatype's canonical quiet NaN"; IEEE 754 canonical
+| NaN keeps only the most significant mantissa bit.  E4M3's only NaN encoding
+| is S.1111.111 (0x7F), while E5M2's canonical quiet NaN is S.11111.10 (0x7E);
+| 0x7F would be the non-canonical S.11111.11 payload.
 *----------------------------------------------------------------------------*/
 #define defaultNaNE4M3 0x7F
-#define defaultNaNE5M2 0x7F
+#define defaultNaNE5M2 0x7E
 
 /*----------------------------------------------------------------------------
 | The bit pattern for a default generated 16-bit floating-point NaN.
