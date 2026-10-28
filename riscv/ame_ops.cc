@@ -2470,7 +2470,30 @@ bool ame_host_ew_mixed(ame_ew_op_t op, uint32_t dst_dtype, uint32_t src_dtype,
   ff |= kernel_ff;
   xs |= kernel_xs;
 
-  softfloat_roundingMode = ame_fp_rm_to_softfloat(td.fp_rm);
+  // mfrint* names its own direction, and instructions.adoc:1516-1517 makes that
+  // direction override the destination datatype's rounding-mode field, so it
+  // also governs the representational rounding of the narrowed result.  Reading
+  // the field here instead lets an RNO destination steer a mfrint* result
+  // through the RTZ emulation, and rounds an integral but unrepresentable
+  // result (2049 stored into FP16) in the wrong direction.  Every other
+  // operation of the family does take its rounding from the field.
+  switch (op) {
+    case ame_ew_op_t::FRINTM:
+      softfloat_roundingMode = softfloat_round_min;
+      break;
+    case ame_ew_op_t::FRINTN:
+      softfloat_roundingMode = softfloat_round_near_even;
+      break;
+    case ame_ew_op_t::FRINTP:
+      softfloat_roundingMode = softfloat_round_max;
+      break;
+    case ame_ew_op_t::FRINTZ:
+      softfloat_roundingMode = softfloat_round_minMag;
+      break;
+    default:
+      softfloat_roundingMode = ame_fp_rm_to_softfloat(td.fp_rm);
+      break;
+  }
   for (uint32_t i = 0; i < nelem; i++) {
     float64_t f;
     std::memcpy(&f.v, result.data() + std::size_t(i) * 8, 8);

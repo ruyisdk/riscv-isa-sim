@@ -278,6 +278,69 @@ static void test_e4m3_pole_flags() {
   expect(ff == 0xd, "e4m3 rsqrt(-0) flags DZ|OF|NX");
 }
 
+// A mixed-format rounding case: the destination field must not reach the
+// narrowed result.  2049.0 is integral but not representable in FP16, so the
+// representational rounding of the stored element is the only observable
+// difference between reading the field and reading the opcode.
+static void test_mixed_rounding_field_is_ignored() {
+  const uint32_t fp64 = 0x2c300140;
+  const uint32_t fp16 = 0x14300110;
+  const uint32_t rno = 0x01400000;
+  const uint64_t values[] = {0x40a0020000000000ull, 0x40a0060000000000ull};
+  const uint16_t by_direction[4][2] = {
+      {0x6800, 0x6801}, // FRINTM: 2048, 2050
+      {0x6800, 0x6802}, // FRINTN: 2048, 2052
+      {0x6801, 0x6802}, // FRINTP: 2050, 2052
+      {0x6800, 0x6801}, // FRINTZ: 2048, 2050
+  };
+  const ame_ew_op_t ops[4] = {ame_ew_op_t::FRINTM, ame_ew_op_t::FRINTN,
+                              ame_ew_op_t::FRINTP, ame_ew_op_t::FRINTZ};
+  const char* names[4] = {"mfrintm", "mfrintn", "mfrintp", "mfrintz"};
+  for (int op = 0; op < 4; op++) {
+    for (uint32_t field = 0; field < 2; field++) {
+      for (int i = 0; i < 2; i++) {
+        uint8_t a[8] = {0}, d[2] = {0};
+        uint8_t ff = 0, xs = 0;
+        std::memcpy(a, &values[i], 8);
+        const uint32_t dst = fp16 | (field ? rno : 0);
+        expect(ame_host_ew_mixed(ops[op], dst, fp64, 1, a, d, &ff, &xs),
+               "mixed mfrint runs");
+        if (d[0] != uint8_t(by_direction[op][i] & 0xff) ||
+            d[1] != uint8_t(by_direction[op][i] >> 8))
+          fprintf(stderr,
+                  "ame-fp-unary-math: %s field=%s value=%llu -> %02x%02x "
+                  "expected %04x\n",
+                  names[op], field ? "RNO" : "RNE",
+                  (unsigned long long)values[i], d[1], d[0], by_direction[op][i]);
+        expect(d[0] == uint8_t(by_direction[op][i] & 0xff) &&
+                   d[1] == uint8_t(by_direction[op][i] >> 8),
+               "mixed mfrint ignores the destination rounding field");
+        expect(ff == 0x01, "mixed mfrint NX");
+        expect(xs == 0, "mixed mfrint no saturation");
+      }
+    }
+  }
+  // An operation that does read the field still narrows in the field's
+  // direction.  sqrt(3) is 1.7320508..., whose FP16 neighbours are 0x3eed and
+  // 0x3eee: RNE stores the upper one, the RNO emulation (RTZ plus jam) the
+  // lower one, so the control proves the field still reaches this path.
+  uint8_t a[8] = {0}, d[2] = {0};
+  uint8_t ff = 0, xs = 0;
+  const uint64_t three = 0x4008000000000000ull;
+  std::memcpy(a, &three, 8);
+  expect(ame_host_ew_mixed(ame_ew_op_t::SQRT, fp16, fp64, 1, a, d, &ff, &xs),
+         "mixed sqrt runs");
+  expect(d[0] == 0xee && d[1] == 0x3e, "mixed sqrt RNE narrows to nearest");
+  expect(ff == 0x01, "mixed sqrt NX");
+  ff = 0;
+  d[0] = 0;
+  d[1] = 0;
+  expect(ame_host_ew_mixed(ame_ew_op_t::SQRT, fp16 | rno, fp64, 1, a, d, &ff, &xs),
+         "mixed sqrt runs under RNO");
+  expect(d[0] == 0xed && d[1] == 0x3e, "mixed sqrt RNO narrows toward zero");
+  expect(ff == 0x01, "mixed sqrt NX under RNO");
+}
+
 int main() {
   isa_parser_t isa("rv64i_ztt", "MSU");
   expect(isa.extension_enabled(EXT_ZTT), "ztt enabled");
@@ -286,6 +349,7 @@ int main() {
   test_ldexp_and_logbias();
   test_e5m2_signaling_nan_flags();
   test_e4m3_pole_flags();
+  test_mixed_rounding_field_is_ignored();
   fprintf(stderr, "ame-fp-unary-math: ok\n");
   return 0;
 }
