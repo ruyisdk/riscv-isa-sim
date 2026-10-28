@@ -1381,6 +1381,12 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
         case ame_ew_op_t::EXP2:
         case ame_ew_op_t::LOG2: {
           if (isNaNF64UI(av.v)) {
+            // Spec 6.2.3 :237-238 sets NV for a signaling NaN and :222-224
+            // quiet the input; the FP32 branch below has had this check since
+            // it was written, but the FP64 one dropped it, so an input like
+            // 0x7ff0000000000001 came back quiet with no flag at all.
+            if (softfloat_isSigNaNF64UI(av.v))
+              softfloat_exceptionFlags |= softfloat_flag_invalid;
             dv = float64_t{defaultNaNF64UI};
             break;
           }

@@ -245,6 +245,51 @@ static void test_e5m2_signaling_nan_flags() {
   ame_set_e5m2_nan_ieee(false);
 }
 
+// Spec 6.2.3 :237-238 raises NV for a signaling NaN input and :222-224
+// quiet it, so a signaling boxed NaN must come back as the canonical quiet NaN
+// with NV set.  The FP32 branch always did this; the FP64 branch of
+// cos/sin/tanh/exp2/log2 dropped the flag until it was made to match.
+static void test_fp64_signaling_nan_sets_nv() {
+  const uint32_t fp64 = 0x2c300140;
+  const uint32_t fp32 = 0x20300120;
+  const uint8_t snan64[8] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x7f};
+  const uint8_t qnan64[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x7f};
+  const uint8_t snan32[4] = {0x01, 0x00, 0x80, 0x7f};
+  const uint8_t qnan32[4] = {0x00, 0x00, 0xc0, 0x7f};
+  const ame_ew_op_t ops[5] = {ame_ew_op_t::COS, ame_ew_op_t::SIN,
+                              ame_ew_op_t::TANH, ame_ew_op_t::EXP2,
+                              ame_ew_op_t::LOG2};
+  const char* names[5] = {"mcos", "msin", "mtanh", "mexp2", "mlog2"};
+  for (int op = 0; op < 5; op++) {
+    uint8_t d[8] = {};
+    uint8_t ff = 0, xs = 0;
+    expect(ame_host_ew(ops[op], fp64, 1, snan64, nullptr, d, &ff, &xs),
+           "fp64 signaling NaN runs");
+    if (std::memcmp(d, qnan64, 8) != 0 || ff != 0x10)
+      fprintf(stderr, "ame-fp-unary-math: %s fp64 sNaN -> %016llx flags %02x\n",
+              names[op], (unsigned long long)*(const uint64_t*)d, ff);
+    expect(std::memcmp(d, qnan64, 8) == 0, "fp64 signaling NaN result");
+    expect(ff == 0x10, "fp64 signaling NaN NV");
+    expect(xs == 0, "fp64 signaling NaN no saturation");
+
+    // A quiet NaN propagates without NV.
+    std::memset(d, 0, 8);
+    ff = 0;
+    expect(ame_host_ew(ops[op], fp64, 1, qnan64, nullptr, d, &ff, &xs),
+           "fp64 quiet NaN runs");
+    expect(std::memcmp(d, qnan64, 8) == 0, "fp64 quiet NaN result");
+    expect(ff == 0x00, "fp64 quiet NaN raises no NV");
+
+    // FP32 is the control: it has always set NV here.
+    uint8_t d32[4] = {};
+    ff = 0;
+    expect(ame_host_ew(ops[op], fp32, 1, snan32, nullptr, d32, &ff, &xs),
+           "fp32 signaling NaN runs");
+    expect(std::memcmp(d32, qnan32, 4) == 0, "fp32 signaling NaN result");
+    expect(ff == 0x10, "fp32 signaling NaN NV");
+  }
+}
+
 // Manual pole case: 1/(±0) and 1/sqrt(±0) saturate to the same-sign max
 // finite E4M3 encoding (0x7e / 0xfe) and must accrue DZ|OF|NX = 0xd.
 static void test_e4m3_pole_flags() {
@@ -348,6 +393,7 @@ int main() {
   test_fp_unops();
   test_ldexp_and_logbias();
   test_e5m2_signaling_nan_flags();
+  test_fp64_signaling_nan_sets_nv();
   test_e4m3_pole_flags();
   test_mixed_rounding_field_is_ignored();
   fprintf(stderr, "ame-fp-unary-math: ok\n");
