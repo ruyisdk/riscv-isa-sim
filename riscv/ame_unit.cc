@@ -939,20 +939,20 @@ void ame_unit_t::ew_unop(ame_ew_op_t op, reg_t md, reg_t ms1) {
     throw trap_illegal_instruction(0);
 
   const uint32_t nelem = n_sq * uint32_t(ame_nelem);
-  std::vector<uint8_t> a_buf, a_conv, out;
+  std::vector<uint8_t> a_buf, out;
   read_squares(this, ms1, da, n_sq, a_buf);
   uint8_t ff = 0, xs = 0;
-  if (ame_dtype_ident_key(da) != ame_dtype_ident_key(dd)) {
-    a_conv.assign(packed_nbytes(dd, nelem), 0);
-    if (!ame_host_convert(da, dd, nelem, a_buf.data(), a_conv.data(), &ff, &xs)) {
-      set_unsupported();
-      return;
-    }
-  } else {
-    a_conv.swap(a_buf);
-  }
   out.assign(packed_nbytes(dd, nelem), 0);
-  if (!ame_host_ew(op, dd, nelem, a_conv.data(), nullptr, out.data(), &ff, &xs)) {
+  // Spec 6.2.3 (:205-240) rounds the finite result once, using the destination
+  // datatype's rounding mode, and never asks the source element to be rounded
+  // first.  A mixed tuple is therefore evaluated in a format that holds the
+  // source element exactly and then converted, instead of converting the
+  // element into the destination format before the operation runs.
+  const bool mixed = ame_dtype_ident_key(da) != ame_dtype_ident_key(dd);
+  const bool ok = mixed
+      ? ame_host_ew_mixed(op, dd, da, nelem, a_buf.data(), out.data(), &ff, &xs)
+      : ame_host_ew(op, dd, nelem, a_buf.data(), nullptr, out.data(), &ff, &xs);
+  if (!ok) {
     set_unsupported();
     return;
   }

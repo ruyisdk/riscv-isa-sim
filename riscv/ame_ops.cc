@@ -2425,6 +2425,91 @@ bool ame_host_convert(uint32_t src_dtype, uint32_t dst_dtype, uint32_t nelem,
   return true;
 }
 
+// Descriptor bits 25:22 carry the floating-point rounding mode.
+constexpr uint32_t kAmeDtypeRmMask = 0x03C00000u;
+// AME_FP64_DTYPE: the widest standard floating-point format, and the only one
+// that holds every supported floating-point source element exactly.
+constexpr uint32_t kAmeFp64Descriptor = 0x2C300140u;
+
+bool ame_host_ew_mixed(ame_ew_op_t op, uint32_t dst_dtype, uint32_t src_dtype,
+                       uint32_t nelem, const uint8_t* a, uint8_t* d,
+                       uint8_t* fflags, uint8_t* xsat) {
+  const ame_dtype_t td = ame_parse_dtype(dst_dtype);
+  const ame_dtype_t sd = ame_parse_dtype(src_dtype);
+  const ame_fp_kind_t sk = fp_kind_of(ame_dtype_family_key(src_dtype));
+  const ame_fp_kind_t tk = fp_kind_of(ame_dtype_family_key(dst_dtype));
+  if (sd.size_bits == 0 || td.size_bits == 0 || sd.is_custom || td.is_custom)
+    return false;
+  if (sk == ame_fp_kind_t::NONE || tk == ame_fp_kind_t::NONE || !a || !d ||
+      nelem == 0)
+    return false;
+
+  const uint32_t compute = kAmeFp64Descriptor | (dst_dtype & kAmeDtypeRmMask);
+  const uint32_t src_bytes = sd.size_bits / 8;
+  const uint32_t dst_bytes = td.size_bits / 8;
+  std::vector<uint8_t> wide(std::size_t(nelem) * 8, 0);
+  std::vector<uint8_t> result(std::size_t(nelem) * 8, 0);
+  uint8_t ff = 0, xs = 0;
+  for (uint32_t i = 0; i < nelem; i++) {
+    float64_t v;
+    if (sk == ame_fp_kind_t::F64) {
+      std::memcpy(&v.v, a + std::size_t(i) * src_bytes, 8);
+    } else {
+      // Every remaining format fits FP32 exactly, so this widening is exact.
+      softfloat_exceptionFlags = 0;
+      v = f32_to_f64(load_as_f32(a + std::size_t(i) * src_bytes, sk));
+      ff |= softfloat_to_ame_fflags(softfloat_exceptionFlags);
+    }
+    std::memcpy(&wide[std::size_t(i) * 8], &v.v, 8);
+  }
+
+  uint8_t kernel_ff = 0, kernel_xs = 0;
+  if (!ame_host_ew(op, compute, nelem, wide.data(), nullptr, result.data(),
+                   &kernel_ff, &kernel_xs))
+    return false;
+  ff |= kernel_ff;
+  xs |= kernel_xs;
+
+  softfloat_roundingMode = ame_fp_rm_to_softfloat(td.fp_rm);
+  for (uint32_t i = 0; i < nelem; i++) {
+    float64_t f;
+    std::memcpy(&f.v, result.data() + std::size_t(i) * 8, 8);
+    softfloat_exceptionFlags = 0;
+    uint8_t* out = d + std::size_t(i) * dst_bytes;
+    switch (tk) {
+      case ame_fp_kind_t::F64:
+        std::memcpy(out, &f.v, 8);
+        break;
+      case ame_fp_kind_t::F32:
+        store_f32(out, f64_to_f32(f));
+        break;
+      case ame_fp_kind_t::F16: {
+        const float16_t h = f64_to_f16(f);
+        std::memcpy(out, &h.v, 2);
+        break;
+      }
+      case ame_fp_kind_t::BF16: {
+        const bfloat16_t h = f64_to_bf16(f);
+        std::memcpy(out, &h.v, 2);
+        break;
+      }
+      default:
+        // The OCP formats have no direct FP64 conversion; the OCP rounding of
+        // the manual is defined on a 32-bit intermediate, which is the hop the
+        // model takes as well.
+        store_from_f32(out, tk, f64_to_f32(f), td.has_inf);
+        break;
+    }
+    ff |= softfloat_to_ame_fflags(softfloat_exceptionFlags);
+  }
+
+  if (fflags)
+    *fflags |= ff;
+  if (xsat)
+    *xsat |= xs;
+  return true;
+}
+
 bool ame_convert_scalar(uint32_t scalar_dtype, uint64_t xval, uint32_t xlen,
                         uint32_t tensor_dtype, uint8_t* out_elem) {
   if (scalar_dtype == 0 || tensor_dtype == 0)

@@ -111,6 +111,16 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
                  const uint8_t* a, const uint8_t* b, uint8_t* d,
                  uint8_t* fflags, uint8_t* xsat);
 
+// Elementwise family on a mixed floating-point tuple: the source element is
+// widened to FP64, the operation runs there, and the finite result is rounded
+// once into `dst_dtype` with that datatype's rounding mode (spec 6.2.3
+// :205-240).  Evaluating in the destination format instead would round the
+// source element before the operation, which the page never asks for.
+// Returns false if either datatype is not a floating-point one.
+bool ame_host_ew_mixed(ame_ew_op_t op, uint32_t dst_dtype, uint32_t src_dtype,
+                       uint32_t nelem, const uint8_t* a, uint8_t* d,
+                       uint8_t* fflags, uint8_t* xsat);
+
 // Compare: dest is integer all-ones / zeros. lt=false → A>=B; lt=true → A<B.
 bool ame_host_ew_cmp(bool lt, uint32_t src_dtype, uint32_t dst_dtype, uint32_t nelem,
                      const uint8_t* a, const uint8_t* b, uint8_t* d, uint8_t* fflags);
