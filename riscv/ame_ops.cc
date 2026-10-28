@@ -1426,6 +1426,18 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
                op == ame_ew_op_t::TANH) &&
               !zero && !(op == ame_ew_op_t::TANH && inf))
             softfloat_exceptionFlags |= softfloat_flag_inexact;
+          // Spec 6.2.3 :248-250: 2**x is exact only for an integral x whose
+          // power of two fits and log2(x) only for a power of two, so every
+          // other finite result is an approximation and raises NX.  Host libm
+          // reports no flags, so the argument decides.
+          if (op == ame_ew_op_t::EXP2 && !inf &&
+              !(std::trunc(hd) == hd && std::isfinite(ho) && ho != 0.0))
+            softfloat_exceptionFlags |= softfloat_flag_inexact;
+          if (op == ame_ew_op_t::LOG2 && !inf) {
+            int exponent = 0;
+            if (!(hd > 0.0 && std::frexp(hd, &exponent) == 0.5))
+              softfloat_exceptionFlags |= softfloat_flag_inexact;
+          }
           if (op == ame_ew_op_t::EXP2 && !inf &&
               (dv.v & 0x7fffffffffffffffull) == 0x7ff0000000000000ull &&
               (dv.v & 0x000fffffffffffffull) == 0) {
@@ -1649,6 +1661,15 @@ bool ame_host_ew(ame_ew_op_t op, uint32_t dtype, uint32_t nelem,
                op == ame_ew_op_t::TANH) &&
               !zero && !(op == ame_ew_op_t::TANH && inf))
             softfloat_exceptionFlags |= softfloat_flag_inexact;
+          // The same argument-driven rule as the FP64 arm above.
+          if (op == ame_ew_op_t::EXP2 && !inf &&
+              !(std::trunc(hf) == hf && std::isfinite(ho) && ho != 0.0f))
+            softfloat_exceptionFlags |= softfloat_flag_inexact;
+          if (op == ame_ew_op_t::LOG2 && !inf) {
+            int exponent = 0;
+            if (!(hf > 0.0f && std::frexp(hf, &exponent) == 0.5f))
+              softfloat_exceptionFlags |= softfloat_flag_inexact;
+          }
           if (op == ame_ew_op_t::EXP2)
             dv = f32_host_overflow_fixup(dv, !inf);
           if (isNaNF32UI(dv.v))

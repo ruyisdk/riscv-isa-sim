@@ -290,6 +290,85 @@ static void test_fp64_signaling_nan_sets_nv() {
   }
 }
 
+// Spec 6.2.3 :248-250 raises NX whenever the delivered finite result differs
+// from the exact mathematical value, which for 2**x happens whenever x is not an
+// integral value whose power of two fits, and for log2(x) whenever x is not a
+// power of two.  Both arms of ame_host_ew returned the host libm result with a
+// clear flag for every finite argument: a narrow destination hid it, because
+// rounding f32 down to f16/bf16 raises NX on its own.
+static void test_exp2_log2_inexact_flags() {
+  const uint32_t fp64 = 0x2c300140;
+  const uint32_t fp32 = 0x20300120;
+  // 2**1.5 and log2(3) are the two arguments the report measured.
+  const float half_exp2 = 1.5f;
+  const float three_log2 = 3.0f;
+  const double half_exp2_64 = 1.5;
+  const double three_log2_64 = 3.0;
+  uint32_t d[2] = {};
+  uint8_t ff = 0, xs = 0;
+
+  expect(ame_host_ew(ame_ew_op_t::EXP2, fp32, 1,
+                     reinterpret_cast<const uint8_t*>(&half_exp2), nullptr,
+                     reinterpret_cast<uint8_t*>(d), &ff, &xs),
+         "fp32 exp2 runs");
+  expect(d[0] == 0x403504f3u, "fp32 exp2(1.5) is sqrt(2)");
+  expect(ff == 0x01, "fp32 exp2(1.5) raises NX");
+
+  ff = 0;
+  expect(ame_host_ew(ame_ew_op_t::LOG2, fp32, 1,
+                     reinterpret_cast<const uint8_t*>(&three_log2), nullptr,
+                     reinterpret_cast<uint8_t*>(d), &ff, &xs),
+         "fp32 log2 runs");
+  expect(ff == 0x01, "fp32 log2(3) raises NX");
+
+  ff = 0;
+  expect(ame_host_ew(ame_ew_op_t::EXP2, fp64, 1,
+                     reinterpret_cast<const uint8_t*>(&half_exp2_64), nullptr,
+                     reinterpret_cast<uint8_t*>(d), &ff, &xs),
+         "fp64 exp2 runs");
+  expect(((uint64_t)d[1] << 32 | d[0]) == 0x4006a09e667f3bcdull,
+         "fp64 exp2(1.5)");
+  expect(ff == 0x01, "fp64 exp2(1.5) raises NX");
+
+  ff = 0;
+  expect(ame_host_ew(ame_ew_op_t::LOG2, fp64, 1,
+                     reinterpret_cast<const uint8_t*>(&three_log2_64), nullptr,
+                     reinterpret_cast<uint8_t*>(d), &ff, &xs),
+         "fp64 log2 runs");
+  expect(ff == 0x01, "fp64 log2(3) raises NX");
+
+  // The exact arguments stay clear: 2**3 = 8, log2(8) = 3, and an infinite
+  // argument gives an exact infinity or zero rather than a rounded value.
+  const float three = 3.0f;
+  const float eight = 8.0f;
+  const float pinf = std::numeric_limits<float>::infinity();
+  const float ninf = -std::numeric_limits<float>::infinity();
+  ff = 0;
+  expect(ame_host_ew(ame_ew_op_t::EXP2, fp32, 1,
+                     reinterpret_cast<const uint8_t*>(&three), nullptr,
+                     reinterpret_cast<uint8_t*>(d), &ff, &xs),
+         "fp32 exp2(3) runs");
+  expect(ff == 0x00, "fp32 exp2(3) is exact");
+  ff = 0;
+  expect(ame_host_ew(ame_ew_op_t::LOG2, fp32, 1,
+                     reinterpret_cast<const uint8_t*>(&eight), nullptr,
+                     reinterpret_cast<uint8_t*>(d), &ff, &xs),
+         "fp32 log2(8) runs");
+  expect(ff == 0x00, "fp32 log2(8) is exact");
+  ff = 0;
+  expect(ame_host_ew(ame_ew_op_t::EXP2, fp32, 1,
+                     reinterpret_cast<const uint8_t*>(&pinf), nullptr,
+                     reinterpret_cast<uint8_t*>(d), &ff, &xs),
+         "fp32 exp2(inf) runs");
+  expect(d[0] == 0x7f800000u && ff == 0x00, "fp32 exp2(inf) is exact");
+  ff = 0;
+  expect(ame_host_ew(ame_ew_op_t::EXP2, fp32, 1,
+                     reinterpret_cast<const uint8_t*>(&ninf), nullptr,
+                     reinterpret_cast<uint8_t*>(d), &ff, &xs),
+         "fp32 exp2(-inf) runs");
+  expect(d[0] == 0x00000000u && ff == 0x00, "fp32 exp2(-inf) is exact");
+}
+
 // Manual pole case: 1/(±0) and 1/sqrt(±0) saturate to the same-sign max
 // finite E4M3 encoding (0x7e / 0xfe) and must accrue DZ|OF|NX = 0xd.
 static void test_e4m3_pole_flags() {
@@ -394,6 +473,7 @@ int main() {
   test_ldexp_and_logbias();
   test_e5m2_signaling_nan_flags();
   test_fp64_signaling_nan_sets_nv();
+  test_exp2_log2_inexact_flags();
   test_e4m3_pole_flags();
   test_mixed_rounding_field_is_ignored();
   fprintf(stderr, "ame-fp-unary-math: ok\n");
